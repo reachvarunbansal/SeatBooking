@@ -71,6 +71,11 @@
     opacity: 0.55;
 }
 
+:where(button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid #f8d47a;
+    outline-offset: 3px;
+}
+
 .button-primary {
     background: #efb84b;
     color: #25170d;
@@ -125,9 +130,33 @@
     background: rgba(244, 63, 94, 0.2);
 }
 
+.manage-dialog {
+    width: min(42rem, calc(100vw - 2rem));
+    max-width: none;
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    border: 1px solid rgba(255, 244, 220, 0.2);
+    border-radius: 1rem;
+    background: transparent;
+    color: #fff4dc;
+    padding: 0;
+}
+
+.manage-dialog[hidden] {
+    display: none;
+}
+
+.manage-dialog::backdrop {
+    background: rgba(7, 8, 10, 0.78);
+    backdrop-filter: blur(4px);
+}
+
 .manage-panel {
-    margin-bottom: 1.5rem;
-    padding: 1.25rem;
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    border-radius: inherit;
+    background: #211b17;
+    padding: 1.5rem;
 }
 
 .manage-header,
@@ -136,6 +165,10 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
+}
+
+.manage-header {
+    align-items: center;
 }
 
 .manage-title,
@@ -153,21 +186,18 @@
 
 .manage-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
-    margin-top: 1.25rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    margin-top: 1.5rem;
 }
 
 .manage-subpanel {
-    border: 1px solid rgba(255, 244, 220, 0.1);
-    border-radius: 0.75rem;
-    background: #171311;
-    padding: 1rem;
+    min-width: 0;
 }
 
 .manage-subpanel-danger {
-    border-color: rgba(253, 164, 175, 0.15);
-    background: #211417;
+    border-top: 1px solid rgba(253, 164, 175, 0.3);
+    padding-top: 1.25rem;
 }
 
 .subpanel-title {
@@ -179,7 +209,7 @@
 
 .form-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
     margin-top: 1rem;
 }
@@ -222,6 +252,10 @@
     border-color: #efb84b;
 }
 
+.form-control:focus-visible {
+    box-shadow: 0 0 0 2px #211b17, 0 0 0 5px #f8d47a;
+}
+
 .form-control-select {
     border-radius: 0.75rem;
     padding-block: 0.625rem;
@@ -257,6 +291,41 @@
     line-height: 1.5;
 }
 
+.venue-management-notice {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 0 1.5rem;
+    border: 1px solid rgba(110, 231, 160, 0.4);
+    border-radius: 0.75rem;
+    background: rgba(16, 90, 59, 0.3);
+    padding: 1rem;
+    color: #b8f5cf;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+
+.notice-dismiss {
+    display: inline-grid;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 2rem;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.notice-dismiss:hover {
+    border-color: currentColor;
+}
+
 .control-panel {
     display: flex;
     align-items: flex-end;
@@ -279,19 +348,120 @@
     color: rgba(255, 244, 220, 0.6);
 }
 
-.assistant-panel {
+.no-venues-state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
     margin-bottom: 1.5rem;
-    padding: 1rem;
+    padding: 1.5rem;
 }
 
-.assistant-row {
+.no-venues-title {
+    margin: 0.5rem 0 0;
+    color: #fff4dc;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.venue-actions {
     display: flex;
     align-items: flex-end;
     gap: 0.75rem;
 }
 
-.assistant-field {
-    flex: 1;
+.assistant-dialog {
+    width: min(34rem, calc(100vw - 2rem));
+    max-width: none;
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    border: 1px solid rgba(255, 244, 220, 0.2);
+    border-radius: 1rem;
+    background: transparent;
+    color: #fff4dc;
+    padding: 0;
+}
+
+.assistant-dialog[hidden] {
+    display: none;
+}
+
+.assistant-dialog::backdrop {
+    background: rgba(7, 8, 10, 0.78);
+    backdrop-filter: blur(4px);
+}
+
+.booking-dialog {
+    width: min(34rem, calc(100vw - 2rem));
+    max-width: none;
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    border: 1px solid rgba(255, 244, 220, 0.2);
+    border-radius: 1rem;
+    background: transparent;
+    color: #fff4dc;
+    padding: 0;
+}
+
+.booking-dialog[hidden] {
+    display: none;
+}
+
+.booking-dialog::backdrop {
+    background: rgba(7, 8, 10, 0.78);
+    backdrop-filter: blur(4px);
+}
+
+.booking-modal {
+    border-radius: inherit;
+    background: #211b17;
+    padding: 1.5rem;
+}
+
+.booking-modal-header,
+.booking-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.booking-confirmation-message {
+    margin: 1.25rem 0 0;
+    color: #b8f5cf;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.booking-modal-actions {
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+}
+
+.assistant-modal {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    border-radius: inherit;
+    background: #211b17;
+    padding: 1.5rem;
+}
+
+.assistant-modal-header,
+.assistant-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.assistant-modal-form {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.25rem;
+}
+
+.assistant-modal-actions {
+    justify-content: flex-end;
 }
 
 .error-banner {
@@ -405,7 +575,7 @@
     font: inherit;
     font-size: 0.625rem;
     font-weight: 600;
-    cursor: pointer;
+    cursor: default;
     transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
 
@@ -419,11 +589,6 @@
     background: currentColor;
     content: '';
     opacity: 0.28;
-}
-
-.seat-available:hover:not(:disabled) {
-    border-color: #d6a55a;
-    background: #3a2d23;
 }
 
 .seat-recommended {
@@ -444,12 +609,8 @@
     border-color: #6f3d38;
     background: #4a2928;
     color: #d8aaa3;
-    cursor: not-allowed;
+    cursor: default;
     opacity: 0.8;
-}
-
-.seat-recommended:disabled {
-    cursor: not-allowed;
 }
 
 .seat-aisle-gap {
@@ -574,13 +735,41 @@
     }
 
     .control-panel,
-    .control-fields,
-    .assistant-row {
+    .control-fields {
         align-items: stretch;
         flex-direction: column;
     }
 
+    .venue-actions {
+        width: 100%;
+    }
+
+    .venue-actions .button {
+        flex: 1;
+    }
+
     .form-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .manage-panel {
+        padding: 1rem;
+    }
+
+    .assistant-modal {
+        padding: 1rem;
+    }
+
+    .booking-modal {
+        padding: 1rem;
+    }
+
+    .assistant-modal-actions .button {
+        flex: 1;
+    }
+
+    .no-venues-state {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }

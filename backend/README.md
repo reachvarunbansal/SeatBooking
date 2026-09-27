@@ -169,9 +169,10 @@ secrets through the deployment platform.
 Open `http://localhost:5173`; Nginx proxies `/api/` and `/docs` to the API. The API is also
 available directly at `http://localhost:4000`. The default host ports are PostgreSQL `5434`, API
 `4000`, and frontend `5173`; see [frontend/README.md](../frontend/README.md) for port overrides.
-Compose does not seed sample venues; create a venue from **Manage Venues** or run the local seed
-command above. To enable AI in Docker, set `OPENAI_API_KEY` in the repo-root `.env` before starting
-Compose; that file is ignored by Git. Stop the stack with `docker compose down`.
+On first startup with an empty database, the API creates a **Default Venue** with 10 rows and 20
+columns. It does not add sample venues when any venue already exists. To enable AI in Docker, set
+`OPENAI_API_KEY` in the repo-root `.env` before starting Compose; that file is ignored by Git.
+Stop the stack with `docker compose down`.
 
 ## Running Tests
 

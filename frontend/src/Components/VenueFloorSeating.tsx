@@ -3,6 +3,7 @@ import type { Seat, VenueDetail } from './types';
 type VenueFloorSeatingProps = {
     venue: VenueDetail | null;
     isLoading: boolean;
+    hasVenues: boolean;
     recommendedSeats: Seat[];
 };
 
@@ -17,13 +18,17 @@ function rowLabelFromIndex(index: number): string {
     return value;
 }
 
-export default function VenueFloorSeating({ venue, isLoading, recommendedSeats }: VenueFloorSeatingProps) {
+export default function VenueFloorSeating({ venue, isLoading, hasVenues, recommendedSeats }: VenueFloorSeatingProps) {
     if (isLoading) {
         return <p className="seat-map-message">Loading venue layout…</p>;
     }
 
     if (!venue) {
-        return <p className="seat-map-message">Select a venue to view the seat map.</p>;
+        return (
+            <p className="seat-map-message">
+                {hasVenues ? 'Select a venue to view the seat map.' : 'No venue to display yet.'}
+            </p>
+        );
     }
 
     const { rows, columns } = venue.layout;
@@ -68,15 +73,14 @@ export default function VenueFloorSeating({ venue, isLoading, recommendedSeats }
                                     const isRecommended = recommendedIds.has(seat.id) || recommendedDisplayIds.has(displaySeatId);
                                     const aisleGap = columns >= 10 && column === Math.ceil(columns / 2) ? 'mr-5' : '';
                                     return (
-                                        <button
+                                        <div
                                             key={seat.id}
-                                            type="button"
+                                            role="img"
                                             aria-label={`Seat ${seat.id} ${seat.status.toLowerCase()}`}
                                             className={`seat-tile ${isRecommended ? 'seat-recommended' : `seat-${seat.status.toLowerCase()}`} ${aisleGap ? 'seat-aisle-gap' : ''}`}
-                                            disabled={seat.status !== 'AVAILABLE'}
                                         >
                                             {column}
-                                        </button>
+                                        </div>
                                     );
                                 })}
                             </div>

@@ -17,7 +17,7 @@ export default function Header({ onManageVenues }: HeaderProps) {
                 onClick={onManageVenues}
                 className="button button-secondary"
             >
-                Manage Venues
+                Manage Venue
             </button>
         </header>
     );

@@ -22,7 +22,7 @@ From the repository root, build and start PostgreSQL, the API, and the frontend:
 docker compose up --build
 ```
 
-Open the application at `http://localhost:5173`. The frontend container serves the static app through Nginx and proxies `/api/` and `/docs` to the API. The API is also available directly at `http://localhost:4000`; PostgreSQL is published on port `5434`. Compose applies database migrations but does not seed sample venues, so create one from **Manage Venues**.
+Open the application at `http://localhost:5173`. The frontend container serves the static app through Nginx and proxies `/api/` and `/docs` to the API. The API is also available directly at `http://localhost:4000`; PostgreSQL is published on port `5434`. Compose applies migrations, and the API creates a **Default Venue** with 10 rows and 20 columns on startup only if no venues exist. It does not add sample venues when any venue is already present.
 
 Stop the stack with `docker compose down`. This keeps the database volume. Use `docker compose down -v` only if you also want to delete the database data.
 

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -7,6 +7,7 @@ const mockFetch = vi.fn();
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 beforeEach(() => {
@@ -39,6 +40,20 @@ beforeEach(() => {
             { id: 'a3', row: 'a', column: 3, status: 'AVAILABLE' },
             { id: 'a4', row: 'a', column: 4, status: 'AVAILABLE' },
             { id: 'a5', row: 'a', column: 5, status: 'AVAILABLE' },
+          ],
+        }),
+      } as Response);
+    }
+
+    if (url.includes('/seat-assistant')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          preferences: { partySize: 2 },
+          row: 'a',
+          seats: [
+            { id: 'a2', row: 'a', column: 2, status: 'AVAILABLE' },
+            { id: 'a3', row: 'a', column: 3, status: 'AVAILABLE' },
           ],
         }),
       } as Response);
@@ -112,7 +127,12 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: /choose your seats/i })).toBeInTheDocument();
-    expect(await screen.findByText(/main hall/i)).toBeInTheDocument();
+    const venueSelect = await screen.findByRole('combobox', { name: /^venue$/i });
+    expect(venueSelect).toHaveValue('');
+    expect(screen.getByRole('option', { name: /choose a venue and party size/i })).toBeDisabled();
+    expect(screen.getByText('Select a venue to view the seat map.')).toBeInTheDocument();
+    await user.selectOptions(venueSelect, 'venue-1');
+    expect(await screen.findByRole('heading', { name: 'Main Hall' })).toBeInTheDocument();
 
     const input = await screen.findByLabelText(/party size/i);
     await user.clear(input);
@@ -124,28 +144,54 @@ describe('App', () => {
     const bestSeatsRequest = mockFetch.mock.calls.find(([url]) => String(url).includes('/best-seats'));
     expect(JSON.parse(String(bestSeatsRequest?.[1]?.body))).toMatchObject({ partySize: 2 });
 
-    expect(screen.getByRole('button', { name: /seat a2 available/i })).toHaveClass('seat-recommended');
-    expect(screen.getByRole('button', { name: /seat a3 available/i })).toHaveClass('seat-recommended');
+    expect(screen.getByRole('img', { name: /seat a2 available/i })).toHaveClass('seat-recommended');
+    expect(screen.getByRole('img', { name: /seat a3 available/i })).toHaveClass('seat-recommended');
+    expect(screen.queryByRole('button', { name: /seat a2 available/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /book these seats/i }));
 
-    expect(await screen.findByText(/booking confirmed for seats a2, a3/i)).toBeInTheDocument();
+    const confirmation = await screen.findByRole('dialog', { name: /booking confirmed/i });
+    expect(within(confirmation).getByText('Booking confirmed for seats A2, A3.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /book these seats/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /seat a2 available/i })).toHaveClass('seat-available');
+    expect(screen.getByRole('img', { name: /seat a2 available/i })).toHaveClass('seat-available');
+    await user.click(within(confirmation).getByRole('button', { name: /^close$/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /booking confirmed/i })).not.toBeInTheDocument());
+  });
+
+  it('opens Ask AI only when requested, submits the prompt, and closes on success', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
+    expect(screen.queryByRole('dialog', { name: /ask ai/i })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /^ask ai$/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /ask ai/i });
+    const prompt = within(dialog).getByRole('textbox', { name: /your request/i });
+    expect(prompt).toHaveFocus();
+    await user.type(prompt, 'I need two seats');
+    await user.click(within(dialog).getByRole('button', { name: /find seats/i }));
+
+    expect(await screen.findByText(/ai found 2 seats in row a/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /ask ai/i })).not.toBeInTheDocument());
+
+    const assistantRequest = mockFetch.mock.calls.find(([url]) => String(url).includes('/seat-assistant'));
+    expect(JSON.parse(String(assistantRequest?.[1]?.body))).toEqual({ prompt: 'I need two seats' });
   });
 
   it('clears the previous recommendation on venue switch and finds seats for the new venue on request', async () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
     await user.click(await screen.findByRole('button', { name: /find best seats/i }));
     expect(await screen.findByText(/a2, a3/i)).toBeInTheDocument();
 
-    const venueSelect = screen.getByRole('combobox', { name: /auditorium/i });
+    const venueSelect = screen.getByRole('combobox', { name: /^venue$/i });
     await user.selectOptions(venueSelect, 'venue-2');
 
     expect(venueSelect).toHaveValue('venue-2');
-    expect(await screen.findByRole('button', { name: /seat a1 booked/i })).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: /seat a1 booked/i })).toBeInTheDocument();
     expect(screen.queryByText(/^A2, A3$/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /find best seats/i }));
@@ -175,10 +221,11 @@ describe('App', () => {
 
     const user = userEvent.setup();
     render(<App />);
-    const venueSelect = await screen.findByRole('combobox', { name: /auditorium/i });
+    const venueSelect = await screen.findByRole('combobox', { name: /^venue$/i });
+    await user.selectOptions(venueSelect, 'venue-1');
     await user.click(screen.getByRole('button', { name: /find best seats/i }));
     await user.selectOptions(venueSelect, 'venue-2');
-    expect(await screen.findByRole('button', { name: /seat a1 booked/i })).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: /seat a1 booked/i })).toBeInTheDocument();
 
     await act(async () => {
       resolveOldDetail({
@@ -199,11 +246,11 @@ describe('App', () => {
       } as Response);
     });
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /seat a1 booked/i })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('img', { name: /seat a1 booked/i })).toBeInTheDocument());
     expect(screen.queryByText(/^A2, A3$/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /seat a2 available/i })).not.toHaveClass('seat-recommended');
-    expect(screen.getByRole('button', { name: /seat a5 available/i })).not.toHaveClass('seat-recommended');
-    expect(screen.queryByRole('button', { name: /seat a1 available/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /seat a2 available/i })).not.toHaveClass('seat-recommended');
+    expect(screen.getByRole('img', { name: /seat a5 available/i })).not.toHaveClass('seat-recommended');
+    expect(screen.queryByRole('img', { name: /seat a1 available/i })).not.toBeInTheDocument();
   });
 
   it('prevents duplicate submissions while a booking is in flight', async () => {
@@ -220,6 +267,7 @@ describe('App', () => {
 
     const user = userEvent.setup();
     render(<App />);
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
     await user.click(await screen.findByRole('button', { name: /find best seats/i }));
     await screen.findByText(/a2, a3/i);
     const bookButton = screen.getByRole('button', { name: /book these seats/i });
@@ -239,7 +287,7 @@ describe('App', () => {
         seats: [{ seat: { id: 'a2' } }, { seat: { id: 'a3' } }],
       }),
     } as Response);
-    expect(await screen.findByText(/booking confirmed for seats a2, a3/i)).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /booking confirmed/i })).toBeInTheDocument();
   });
 
   it('keeps booking confirmation when refreshing the venue fails', async () => {
@@ -262,11 +310,12 @@ describe('App', () => {
 
     const user = userEvent.setup();
     render(<App />);
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
     await user.click(await screen.findByRole('button', { name: /find best seats/i }));
     await screen.findByText(/a2, a3/i);
     await user.click(screen.getByRole('button', { name: /book these seats/i }));
 
-    expect(await screen.findByText(/booking confirmed for seats a2, a3/i)).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /booking confirmed/i })).toBeInTheDocument();
     expect(screen.getByText(/booking was confirmed, but the venue could not be refreshed/i)).toBeInTheDocument();
     expect(screen.queryByText(/^booking failed/i)).not.toBeInTheDocument();
   });
@@ -275,16 +324,44 @@ describe('App', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: /manage venues/i }));
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
+    await user.click(await screen.findByRole('button', { name: /manage venue/i }));
 
-    expect(screen.getByRole('dialog', { name: /manage venues/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /manage venues/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /manage venue/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /manage venue/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/venue name/i)).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: /rows/i })).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: /columns/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add venue/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /delete main hall/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /delete venue: main hall/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/admin token/i)).not.toBeInTheDocument();
   });
 
-  it('sends JSON when adding a venue without an admin token', async () => {
+  it('shows a no venues state with a Create Venue action that opens the modal', async () => {
+    const defaultFetch = mockFetch.getMockImplementation();
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/venues') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => [] } as Response);
+      }
+      return defaultFetch?.(input, init) as Promise<Response>;
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /no venues yet/i })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /^venue$/i })).not.toBeInTheDocument();
+    expect(screen.getByText('No venue to display yet.')).toBeInTheDocument();
+    expect(screen.queryByText('Select a venue to view the seat map.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /best available seats/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/no seat recommendation yet/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /create venue/i }));
+
+    expect(screen.getByRole('dialog', { name: /manage venue/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/venue name/i)).toHaveFocus();
+  });
+
+  it('adds a venue without asking for an admin token and closes after confirmation', async () => {
     const defaultFetch = mockFetch.getMockImplementation();
     const createdVenue = { id: 'venue-2', name: 'New Venue', rows: 10, columns: 12 };
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -308,7 +385,9 @@ describe('App', () => {
 
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: /manage venues/i }));
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
+    await user.click(await screen.findByRole('button', { name: /manage venue/i }));
+    await user.type(screen.getByLabelText(/venue name/i), 'New Venue');
     await user.click(screen.getByRole('button', { name: /add venue/i }));
 
     expect(await screen.findByText(/new venue was added with 120 seats/i)).toBeInTheDocument();
@@ -316,5 +395,102 @@ describe('App', () => {
       ([url, init]) => String(url).endsWith('/api/venues') && init?.method === 'POST',
     );
     expect(createRequest?.[1]?.headers).toMatchObject({ 'Content-Type': 'application/json' });
+    expect(createRequest?.[1]?.headers).not.toHaveProperty('x-admin-token');
+    await waitFor(
+      () => expect(screen.queryByRole('dialog', { name: /manage venue/i })).not.toBeInTheDocument(),
+      { timeout: 2500 },
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/new venue was added with 120 seats/i);
+    await user.click(screen.getByRole('button', { name: /dismiss venue notification/i }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('automatically hides the venue success notice after 10 seconds', async () => {
+    const defaultFetch = mockFetch.getMockImplementation();
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/venues') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({ id: 'venue-3', name: 'New Venue', rows: 10, columns: 12 }),
+        } as Response);
+      }
+      return defaultFetch?.(input, init) as Promise<Response>;
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
+    await user.click(await screen.findByRole('button', { name: /manage venue/i }));
+    await user.type(screen.getByLabelText(/venue name/i), 'New Venue');
+    const timeoutSpy = vi.spyOn(window, 'setTimeout');
+    await user.click(screen.getByRole('button', { name: /add venue/i }));
+    expect(await screen.findByText(/new venue was added with 120 seats/i)).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.queryByRole('dialog', { name: /manage venue/i })).not.toBeInTheDocument(),
+      { timeout: 2500 },
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/new venue was added with 120 seats/i);
+
+    const hideNotice = timeoutSpy.mock.calls.find(([, delay]) => delay === 10_000)?.[0];
+    expect(hideNotice).toBeDefined();
+    act(() => (hideNotice as () => void)());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('closes on Escape and restores focus to the Manage Venue button', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const manageButton = await screen.findByRole('button', { name: /manage venue/i });
+    await user.click(manageButton);
+    expect(screen.getByRole('dialog', { name: /manage venue/i })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(
+      () => expect(screen.queryByRole('dialog', { name: /manage venue/i })).not.toBeInTheDocument(),
+      { timeout: 2500 },
+    );
+    expect(manageButton).toHaveFocus();
+  });
+
+  it('deletes the selected venue, announces success, and closes the modal', async () => {
+    const defaultFetch = mockFetch.getMockImplementation();
+    let venueWasDeleted = false;
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/venues/venue-1') && init?.method === 'DELETE') {
+        venueWasDeleted = true;
+        return Promise.resolve({ ok: true, status: 204 } as Response);
+      }
+      if (url.endsWith('/api/venues') && !init?.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => venueWasDeleted
+            ? [{ id: 'venue-2', name: 'Balcony', rows: 2, columns: 5 }]
+            : [
+                { id: 'venue-1', name: 'Main Hall', rows: 2, columns: 5 },
+                { id: 'venue-2', name: 'Balcony', rows: 2, columns: 5 },
+              ],
+        } as Response);
+      }
+      return defaultFetch?.(input, init) as Promise<Response>;
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
+    await user.click(await screen.findByRole('button', { name: /manage venue/i }));
+    await user.click(screen.getByRole('button', { name: /delete venue: main hall/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete Main Hall?'));
+    expect(await screen.findByText(/main hall and its seats and bookings were deleted/i)).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.queryByRole('dialog', { name: /manage venue/i })).not.toBeInTheDocument(),
+      { timeout: 2500 },
+    );
+    expect(screen.getByRole('combobox', { name: /^venue$/i })).toHaveValue('venue-2');
   });
 });

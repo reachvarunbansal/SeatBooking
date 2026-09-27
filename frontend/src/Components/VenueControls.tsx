@@ -10,6 +10,8 @@ type VenueControlsProps = {
     onVenueChange: (venueId: string) => void;
     onPartySizeChange: (partySize: string) => void;
     onFindBestSeats: () => void;
+    onOpenAskAi: () => void;
+    onCreateVenue: () => void;
 };
 
 export default function VenueControls({
@@ -21,6 +23,8 @@ export default function VenueControls({
     onVenueChange,
     onPartySizeChange,
     onFindBestSeats,
+    onOpenAskAi,
+    onCreateVenue,
 }: VenueControlsProps) {
     const maxPartySizeValue = Math.max(maxPartySize, 1);
     const parsedPartySize = Number(partySizeDraft);
@@ -32,15 +36,33 @@ export default function VenueControls({
         return <div className="panel loading-message">Loading venues…</div>;
     }
 
+    if (venues.length === 0) {
+        return (
+            <section className="panel no-venues-state" aria-labelledby="no-venues-title">
+                <div>
+                    <p className="section-eyebrow">Venue setup</p>
+                    <h2 className="no-venues-title" id="no-venues-title">No Venues Yet</h2>
+                    <p className="manage-description">Create a venue to set up its seating layout and start making bookings.</p>
+                </div>
+                <button type="button" className="button button-primary" onClick={onCreateVenue}>
+                    Create Venue
+                </button>
+            </section>
+        );
+    }
+
     return (
         <section className="panel control-panel">
             <label className="form-field">
-                <span className="field-label">Auditorium</span>
+                <span className="field-label">Venue</span>
                 <select
                     value={selectedVenueId}
                     onChange={(event) => onVenueChange(event.target.value)}
                     className="form-control form-control-select"
                 >
+                    <option value="" disabled>
+                        Choose a venue and party size to see the best contiguous seats.
+                    </option>
                     {venues.map((venue) => (
                         <option key={venue.id} value={venue.id}>{venue.name}</option>
                     ))}
@@ -62,7 +84,17 @@ export default function VenueControls({
                 />
             </label>
 
-            <FindBestSeats disabled={!selectedVenueId || !isPartySizeValid} onFind={onFindBestSeats} />
+            <div className="venue-actions" aria-label="Seat actions">
+                <FindBestSeats disabled={!selectedVenueId || !isPartySizeValid} onFind={onFindBestSeats} />
+                <button
+                    type="button"
+                    className="button button-assistant"
+                    disabled={!selectedVenueId}
+                    onClick={onOpenAskAi}
+                >
+                    Ask AI
+                </button>
+            </div>
         </section>
     );
 }

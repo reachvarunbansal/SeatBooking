@@ -6,6 +6,8 @@ This document describes the current application architecture, request flows, per
 
 The system consists of a React single-page application, an Express API, and PostgreSQL. The backend is a layered modular monolith; the frontend is a separate client application. In Docker Compose, Nginx serves the compiled frontend and proxies API and documentation requests to the backend. During local development, Vite serves the UI and the browser calls the API directly.
 
+Before listening for requests, the API checks for an existing venue. If none exists, it transactionally creates a 10-row by 20-column **Default Venue**. A PostgreSQL advisory transaction lock prevents concurrent API instances from creating duplicate defaults.
+
 ```mermaid
 flowchart LR
     User[User] --> Browser[Browser]

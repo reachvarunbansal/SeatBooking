@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AskAI from './Components/AskAI';
 import BookSeats from './Components/BookSeats';
+import BookingConfirmation from './Components/BookingConfirmation';
 import Header from './Components/Header';
 import ManageVenue from './Components/ManageVenue';
 import VenueControls from './Components/VenueControls';
@@ -76,7 +77,10 @@ function App() {
   const [partySizeDraft, setPartySizeDraft] = useState('2');
   const [assistantPrompt, setAssistantPrompt] = useState('');
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState('');
+  const [isAskAiOpen, setIsAskAiOpen] = useState(false);
   const [bestSeats, setBestSeats] = useState<Seat[]>([]);
+  const [bookingConfirmation, setBookingConfirmation] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [statusError, setStatusError] = useState('');
   const [venuesLoading, setVenuesLoading] = useState(true);
@@ -88,10 +92,26 @@ function App() {
   const [venueManagementStatus, setVenueManagementStatus] = useState('');
   const [venueManagementLoading, setVenueManagementLoading] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const venueManagerCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const venueSelectionVersion = useRef(0);
   const recommendationRequestId = useRef(0);
   const assistantRequestId = useRef(0);
   const bookingRequestId = useRef(0);
+
+  useEffect(() => () => {
+    if (venueManagerCloseTimer.current) {
+      clearTimeout(venueManagerCloseTimer.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!venueManagementStatus || isVenueManagerOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setVenueManagementStatus(''), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [isVenueManagerOpen, venueManagementStatus]);
 
   useEffect(() => {
     async function loadVenues() {
@@ -100,9 +120,6 @@ function App() {
         setVenuesError(null);
         const data = await requestJson<VenueSummary[]>('/api/venues');
         setVenues(data);
-        if (!selectedVenueId && data[0]) {
-          setSelectedVenueId(data[0].id);
-        }
       } catch (error) {
         setVenuesError(error instanceof Error ? error.message : 'Unable to load venues.');
       } finally {
@@ -111,7 +128,7 @@ function App() {
     }
 
     void loadVenues();
-  }, [selectedVenueId]);
+  }, []);
 
   useEffect(() => {
     if (!selectedVenueId) {
@@ -166,24 +183,61 @@ function App() {
     setBestSeats([]);
     setStatusMessage('');
     setStatusError('');
+    setBookingConfirmation('');
+    setAssistantError('');
     setAssistantLoading(false);
+    setIsAskAiOpen(false);
     setBookingLoading(false);
   }
 
-  async function handleCreateVenue(input: CreateVenueInput, adminToken: string) {
+  function closeVenueManager() {
+    if (venueManagerCloseTimer.current) {
+      clearTimeout(venueManagerCloseTimer.current);
+      venueManagerCloseTimer.current = null;
+    }
+    setIsVenueManagerOpen(false);
+  }
+
+  function closeVenueManagerAfterSuccess() {
+    if (venueManagerCloseTimer.current) {
+      clearTimeout(venueManagerCloseTimer.current);
+    }
+    venueManagerCloseTimer.current = setTimeout(() => {
+      venueManagerCloseTimer.current = null;
+      setIsVenueManagerOpen(false);
+    }, 1400);
+  }
+
+  function openVenueManager() {
+    if (venueManagerCloseTimer.current) {
+      clearTimeout(venueManagerCloseTimer.current);
+      venueManagerCloseTimer.current = null;
+    }
+    setIsVenueManagerOpen(true);
+    setVenueManagementError('');
+    setVenueManagementStatus('');
+  }
+
+  function openAskAi() {
+    setAssistantError('');
+    setStatusMessage('');
+    setIsAskAiOpen(true);
+  }
+
+  async function handleCreateVenue(input: CreateVenueInput) {
     try {
       setVenueManagementLoading(true);
       setVenueManagementError('');
       setVenueManagementStatus('');
       const created = await requestJson<VenueSummary>('/api/venues', {
         method: 'POST',
-        headers: adminToken ? { 'x-admin-token': adminToken } : undefined,
         body: JSON.stringify(input),
       });
       const refreshedVenues = await requestJson<VenueSummary[]>('/api/venues');
       setVenues(refreshedVenues);
       handleVenueChange(created.id);
       setVenueManagementStatus(`${created.name} was added with ${input.rows * input.columns} seats.`);
+      closeVenueManagerAfterSuccess();
     } catch (error) {
       setVenueManagementError(error instanceof Error ? error.message : 'Unable to add venue.');
     } finally {
@@ -191,7 +245,7 @@ function App() {
     }
   }
 
-  async function handleDeleteVenue(adminToken: string) {
+  async function handleDeleteVenue() {
     if (!selectedVenueId || !selectedVenue) {
       return;
     }
@@ -206,12 +260,12 @@ function App() {
       setVenueManagementStatus('');
       await requestJson<void>(`/api/venues/${selectedVenueId}`, {
         method: 'DELETE',
-        headers: adminToken ? { 'x-admin-token': adminToken } : undefined,
       });
       const refreshedVenues = await requestJson<VenueSummary[]>('/api/venues');
       setVenues(refreshedVenues);
       handleVenueChange(refreshedVenues[0]?.id ?? '');
       setVenueManagementStatus(`${selectedVenue.name} and its seats and bookings were deleted.`);
+      closeVenueManagerAfterSuccess();
     } catch (error) {
       setVenueManagementError(error instanceof Error ? error.message : 'Unable to delete venue.');
     } finally {
@@ -267,7 +321,7 @@ function App() {
     setBestSeats([]);
     try {
       setAssistantLoading(true);
-      setStatusError('');
+      setAssistantError('');
       setStatusMessage('');
       const result = await requestJson<{ preferences: { partySize: number }; row?: string; seats: Seat[] }>(
         `/api/venues/${venueId}/seat-assistant`,
@@ -283,9 +337,10 @@ function App() {
       setBestSeats(result.seats ?? []);
       const rowLabel = result.row ? `row ${result.row.toUpperCase()}` : 'the best available row';
       setStatusMessage(`AI found ${result.preferences.partySize} seat${result.preferences.partySize === 1 ? '' : 's'} in ${rowLabel}.`);
+      setIsAskAiOpen(false);
     } catch (error) {
       if (selectionVersion === venueSelectionVersion.current && requestId === recommendationRequestId.current) {
-        setStatusError(error instanceof Error ? error.message : 'The AI seat assistant failed.');
+        setAssistantError(error instanceof Error ? error.message : 'The AI seat assistant failed.');
       }
     } finally {
       if (currentAssistantRequestId === assistantRequestId.current) {
@@ -325,11 +380,12 @@ function App() {
         const seat = seatsToBook.find((candidate) => candidate.id === seatId);
         return seat ? seatLabel(seat) : seatId;
       });
-      setStatusMessage(
+      setBookingConfirmation(
         confirmedSeatLabels.length > 0
           ? `Booking confirmed for seats ${confirmedSeatLabels.join(', ')}.`
           : 'Booking confirmed.',
       );
+      setStatusMessage('');
       setBestSeats([]);
       try {
         const refreshed = await requestJson<VenueDetail>(`/api/venues/${venueId}`);
@@ -355,11 +411,7 @@ function App() {
   return (
     <main className="app-shell">
       <Header
-        onManageVenues={() => {
-          setIsVenueManagerOpen(true);
-          setVenueManagementError('');
-          setVenueManagementStatus('');
-        }}
+        onManageVenues={openVenueManager}
       />
 
       <ManageVenue
@@ -368,10 +420,24 @@ function App() {
         isLoading={venueManagementLoading}
         error={venueManagementError}
         status={venueManagementStatus}
-        onClose={() => setIsVenueManagerOpen(false)}
+        onClose={closeVenueManager}
         onCreate={handleCreateVenue}
         onDelete={handleDeleteVenue}
       />
+
+      {!isVenueManagerOpen && venueManagementStatus ? (
+        <div className="venue-management-notice" role="status" aria-live="polite">
+          <span>{venueManagementStatus}</span>
+          <button
+            type="button"
+            className="notice-dismiss"
+            aria-label="Dismiss venue notification"
+            onClick={() => setVenueManagementStatus('')}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
 
       {venuesError || venueError ? (
         <div className="error-banner">
@@ -388,27 +454,44 @@ function App() {
         onVenueChange={handleVenueChange}
         onPartySizeChange={setPartySizeDraft}
         onFindBestSeats={handleFindBestSeats}
+        onOpenAskAi={openAskAi}
+        onCreateVenue={openVenueManager}
       />
 
       <AskAI
+        isOpen={isAskAiOpen}
         prompt={assistantPrompt}
         isLoading={assistantLoading}
         isDisabled={!selectedVenueId || assistantPrompt.trim().length < 3}
+        error={assistantError}
         onPromptChange={setAssistantPrompt}
         onAsk={handleAskAssistant}
+        onClose={() => setIsAskAiOpen(false)}
+      />
+
+      <BookingConfirmation
+        message={bookingConfirmation}
+        onClose={() => setBookingConfirmation('')}
       />
 
       <div className="content-grid">
         <section>
-          <VenueFloorSeating venue={venueDetail} isLoading={venueLoading} recommendedSeats={bestSeats} />
+          <VenueFloorSeating
+            venue={venueDetail}
+            isLoading={venueLoading}
+            hasVenues={venues.length > 0}
+            recommendedSeats={bestSeats}
+          />
         </section>
-        <BookSeats
-          recommendedSeats={bestSeats}
-          statusMessage={statusMessage}
-          statusError={statusError}
-          isBooking={bookingLoading}
-          onBook={handleBookSeats}
-        />
+        {venues.length > 0 ? (
+          <BookSeats
+            recommendedSeats={bestSeats}
+            statusMessage={statusMessage}
+            statusError={isAskAiOpen ? '' : statusError}
+            isBooking={bookingLoading}
+            onBook={handleBookSeats}
+          />
+        ) : null}
       </div>
     </main>
   );

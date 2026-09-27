@@ -34,7 +34,7 @@ export default function BookSeats({ recommendedSeats, statusMessage, statusError
                     </button>
                 </>
             ) : (
-                <p className="empty-reservation">Choose a venue and party size to see the best contiguous seats.</p>
+                <p className="empty-reservation">No seat recommendation yet.</p>
             )}
         </aside>
     );
