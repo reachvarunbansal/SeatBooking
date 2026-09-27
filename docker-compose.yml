@@ -25,12 +25,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
       # Connects over the internal docker network, not the host-mapped 5434 port.
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seat_selection
-      CORS_ORIGIN: http://localhost:5173
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
     ports:
       - "${API_HOST_PORT:-4000}:4000"
     healthcheck:

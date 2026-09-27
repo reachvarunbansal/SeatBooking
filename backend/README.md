@@ -118,6 +118,14 @@ Edit `backend/.env` if your local PostgreSQL port differs. `OPENAI_API_KEY` is o
 core booking app; set it there if you want to enable the AI seat assistant. Keep `.env` private and
 do not commit it.
 
+`backend/.env` is the development/demo profile and remains the default for `npm run dev`. When
+`NODE_ENV=production` is set before starting Node, `src/config/environment.ts` loads
+`backend/.env.production` instead. A secret-free starting template is provided as
+[`backend/.env.production.example`](.env.production.example); copy it to `.env.production` only
+when preparing a real production environment, replace every placeholder, and keep that file out of
+Git. Production startup rejects a missing/short `ADMIN_TOKEN` or wildcard `CORS_ORIGIN`. Prefer
+injecting these secrets through the deployment platform rather than storing them in a file.
+
 ### 3. Install dependencies and generate Prisma Client
 
 Run these commands from `backend/` in any shell:
@@ -155,6 +163,9 @@ docker compose up --build
 Compose starts PostgreSQL, the API, and the Nginx-hosted frontend. It waits for PostgreSQL's
 healthcheck, generates Prisma Client during the backend image build, applies migrations in the
 backend container entrypoint, and waits for the API healthcheck before starting the frontend.
+Compose defaults the API to the development profile for local demos; it does not mount
+`backend/.env.production`. Production deployments should provide validated environment values and
+secrets through the deployment platform.
 Open `http://localhost:5173`; Nginx proxies `/api/` and `/docs` to the API. The API is also
 available directly at `http://localhost:4000`. The default host ports are PostgreSQL `5434`, API
 `4000`, and frontend `5173`; see [frontend/README.md](../frontend/README.md) for port overrides.

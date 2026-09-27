@@ -8,6 +8,12 @@ This guide is for interviewers who want to run and test the application. For com
 - Docker Desktop with Compose on Windows/macOS, or Docker Engine with the Compose plugin on Linux
 - Node.js 20.19+ or 22.12+ for local development outside Docker
 
+## Environment Profiles
+
+The existing `backend/.env` is the development/demo profile and remains in use for local development. Docker Compose defaults `NODE_ENV` to `development` for the demo.
+
+For production, start from [`backend/.env.production.example`](backend/.env.production.example), copy it to the ignored `backend/.env.production`, replace every placeholder, and set `NODE_ENV=production` before starting the backend. Production mode rejects a missing/short `ADMIN_TOKEN` and wildcard `CORS_ORIGIN`. Do not commit either real environment file; use your deployment platform's secret manager for deployed production credentials.
+
 ## Option 1: Run the Full Stack in Docker
 
 From the repository root, build and start PostgreSQL, the API, and the frontend:
