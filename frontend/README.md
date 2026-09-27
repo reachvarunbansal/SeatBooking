@@ -4,44 +4,82 @@ React and TypeScript application for browsing venue seating, finding recommended
 
 ## Run Locally
 
-Prerequisites: Node.js 20.19+ or 22.12+, and the backend/PostgreSQL services running. Follow the [backend setup guide](../backend/README.md) first; it covers Docker PostgreSQL, environment configuration, Prisma Client generation, migrations, and sample data.
-
-From `frontend/`, install dependencies and start Vite:
+Prerequisites: Node.js 20.19+ or 22.12+. Start PostgreSQL and the backend first using the [backend setup guide](../backend/README.md). Run the frontend in a separate terminal from the repository root.
 
 macOS/Linux:
 ```bash
+cd frontend
+if [ ! -f .env ]; then cp .env.example .env; fi
 npm ci
-cp .env.example .env
 npm run dev
 ```
 
 Windows PowerShell:
 ```powershell
+Set-Location frontend
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 npm ci
-Copy-Item .env.example .env
 npm run dev
 ```
 
 Windows Command Prompt:
 ```bat
+cd frontend
+if not exist .env copy .env.example .env
 npm ci
-copy .env.example .env
 npm run dev
 ```
 
-Vite serves the frontend at `http://localhost:5173`. Set `VITE_API_URL` in `.env` if the API is not at `http://localhost:4000`.
+Vite serves the frontend at `http://localhost:5173`. The local `.env.example` points API requests to `http://localhost:4000`.
+
+## Run the Full Stack in Docker
+
+From the repository root, build and start PostgreSQL, the API, and the Nginx-hosted frontend:
+
+```bash
+docker compose up --build
+```
+
+Nginx serves the frontend and proxies `/api/` and `/docs` to the backend, so browser requests use the frontend origin. The default host ports are frontend `5173`, API `4000`, and PostgreSQL `5434`. If any are already in use, set alternate ports before starting Compose.
+
+macOS/Linux:
+```bash
+POSTGRES_HOST_PORT=5435 API_HOST_PORT=4001 FRONTEND_HOST_PORT=5174 docker compose up --build
+```
+
+Windows PowerShell:
+```powershell
+$env:POSTGRES_HOST_PORT = '5435'
+$env:API_HOST_PORT = '4001'
+$env:FRONTEND_HOST_PORT = '5174'
+docker compose up --build
+```
+
+With those example overrides, open `http://localhost:5174`; the API is directly available at `http://localhost:4001`. Compose does not seed sample venues; create one in **Manage Venues** or use the backend guide's seed instructions. Stop the stack with `docker compose down`; add `-v` only to remove the database volume too.
 
 ## Tests and Build
 
 ```bash
-npm test -- --run
+npm test
+npm run typecheck
 npm run build
 npm run lint
 ```
 
 ## Component Structure
 
-`src/App.tsx` owns the shared page state, API calls, and user workflows. Page sections are split into `src/Components/`:
+Current source layout:
+
+```text
+src/
+  main.tsx                 React entry point
+  App.tsx                  Page-level state, API calls, and workflow orchestration
+  index.css                Global styles
+  Components/              Page sections and shared UI types
+  test/                    Frontend tests and test setup
+```
+
+`src/App.tsx` currently owns shared state and API workflows. Page sections are split into `src/Components/`:
 
 | Component | Responsibility |
 |---|---|
@@ -62,18 +100,8 @@ Effects load the venue list and selected venue's seat map. User actions call the
 
 TanStack Query and Zustand are present in the package dependencies but are not currently used for application state or data fetching.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+## Scaling the Frontend
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Keep the present component boundaries for the current feature size. As independent workflows grow, move their state, API functions, components, and tests into feature-owned folders (for example, `features/booking/` and `features/venues/`) and keep genuinely shared UI and types under a shared directory. Treat that as an incremental extraction from `App.tsx`, not a required up-front rewrite. Add a server-state library such as TanStack Query only when caching, request deduplication, or invalidation needs justify it; it is installed but not currently used.
+
+The frontend CI workflow is not currently configured; the available local checks are `npm test`, `npm run typecheck`, `npm run build`, and `npm run lint`.

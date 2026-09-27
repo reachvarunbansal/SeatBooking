@@ -2,7 +2,7 @@
 
 REST API for a concert venue seat selection & booking system, built for the Skyward fullstack
 coding challenge ([README-BE.md](../README-BE.md)). Implements base + mid-level + senior
-requirements plus the requested bonuses (Docker, CI/CD, Swagger docs, rate limiting, full DB
+requirements plus the requested bonuses (Docker, CI checks, Swagger docs, rate limiting, full DB
 implementation).
 
 ## Approach
@@ -13,15 +13,51 @@ tested in complete isolation. It is wrapped by a layered architecture:
 
 ```
 HTTP request
-  → routes (Express routers)        — parses/validates input, shapes the HTTP response
-  → services                        — business rules (booking transaction, orchestration)
+  → routes (Express routers)        — HTTP contract and response codes
+  → middleware + schemas            — cross-cutting concerns and Zod validation
+  → services                        — business rules and transaction orchestration
   → algorithm                       — pure seat-selection logic (no I/O)
-  → repositories (Prisma)            — data access
+  → repositories (Prisma)           — data access
   → PostgreSQL
 ```
 
 Each layer only depends on the one below it, so the algorithm, and each layer, can be tested
 independently. See [Architecture](#architecture) below for the full rationale.
+
+### Backend source map
+
+```text
+src/
+  app.ts                 Express middleware and route registration; no listener
+  server.ts              Runtime entry point that starts the HTTP listener
+  config/                Validated environment settings loaded once at startup
+  routes/                HTTP handlers and OpenAPI annotations
+  schemas/               Zod request validation schemas
+  middleware/            Validation, authorization, rate limiting, error handling
+  services/              Use cases and business workflows
+  algorithm/             Pure seat-selection rules
+  repositories/          Prisma queries and persistence operations
+  db/                    Prisma client initialization
+  docs/                  OpenAPI configuration
+  errors.ts              Typed application errors
+prisma/
+  schema.prisma          PostgreSQL data model
+  migrations/            Versioned schema migrations
+  seed.ts                Local sample data
+tests/
+  unit/                  Fast tests of isolated logic
+  integration/           HTTP/service tests using PostgreSQL
+```
+
+Keep route handlers thin, put business decisions in services, and keep Prisma calls in
+repositories. For a new capability, extend the relevant schemas, routes, services, repositories,
+and tests as needed. Keep the pure algorithm independent of HTTP and persistence; introduce a
+separate service or infrastructure only when there is a real deployment or scaling need.
+
+`src/config/environment.ts` loads `.env`, parses the environment once, and applies defaults for
+optional settings. It requires a valid PostgreSQL `DATABASE_URL` and validates `PORT` before the
+server starts, so configuration errors identify the invalid setting early. The venue-list route
+also goes through `venueService`, matching the other venue endpoints.
 
 ## Tech Stack
 
@@ -63,19 +99,19 @@ Run the commands from the repository root:
 macOS/Linux:
 ```bash
 cd backend
-cp .env.example .env
+if [ ! -f .env ]; then cp .env.example .env; fi
 ```
 
 Windows PowerShell:
 ```powershell
 Set-Location backend
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 Windows Command Prompt:
 ```bat
 cd backend
-copy .env.example .env
+if not exist .env copy .env.example .env
 ```
 
 Edit `backend/.env` if your local PostgreSQL port differs. `OPENAI_API_KEY` is optional for the
@@ -113,15 +149,18 @@ npm run dev             # http://localhost:4000, auto-restarts on change
 ### Run PostgreSQL and the API in Docker
 
 ```bash
-docker compose up -d --build
+docker compose up --build
 ```
 
-Compose starts PostgreSQL and the API, waits for the database healthcheck, generates Prisma Client
-during the backend image build, applies migrations in the container entrypoint, and exposes the API
-at `http://localhost:4000`. It does not run the Vite frontend or seed sample venues. Start the
-frontend separately using [frontend/README.md](../frontend/README.md); for a fresh database, create
-a venue from **Manage Venues** or run the local seed command above. To enable AI in Docker, set
-`OPENAI_API_KEY` in the repo-root `.env` before `docker compose up`; that file is ignored by Git.
+Compose starts PostgreSQL, the API, and the Nginx-hosted frontend. It waits for PostgreSQL's
+healthcheck, generates Prisma Client during the backend image build, applies migrations in the
+backend container entrypoint, and waits for the API healthcheck before starting the frontend.
+Open `http://localhost:5173`; Nginx proxies `/api/` and `/docs` to the API. The API is also
+available directly at `http://localhost:4000`. The default host ports are PostgreSQL `5434`, API
+`4000`, and frontend `5173`; see [frontend/README.md](../frontend/README.md) for port overrides.
+Compose does not seed sample venues; create a venue from **Manage Venues** or run the local seed
+command above. To enable AI in Docker, set `OPENAI_API_KEY` in the repo-root `.env` before starting
+Compose; that file is ignored by Git. Stop the stack with `docker compose down`.
 
 ## Running Tests
 
@@ -137,8 +176,8 @@ npm run typecheck
   any run, gaps splitting a row, fallback to a farther row).
 - **Integration tests** (`tests/integration/`) — services and HTTP endpoints against a real
   Postgres database, using dedicated ad-hoc venues per test file (cleaned up in `afterAll`) so
-  they don't collide with seeded data. Includes a concurrency test proving the booking
-  transaction rejects a seat that's already been booked.
+  they don't collide with seeded data. Booking tests verify a subsequent request for an
+  already-booked seat returns a conflict; they do not simulate two simultaneous requests.
 
 ## API Overview
 
@@ -184,10 +223,12 @@ the same testability and separation-of-concerns benefits with far less complexit
 its 3 documented worked examples (and edge cases) can be verified with millisecond-fast unit
 tests with no test database required.
 
-**Why booking runs inside a Prisma `$transaction`:** the booking service re-reads seat status
-*inside* the transaction before marking seats `BOOKED`. This closes the race window between
-"check seat is available" and "mark seat booked" — two concurrent booking requests for the same
-seat will have one succeed and one receive a `409 Conflict`, verified by an integration test.
+**Why booking runs inside a Prisma `$transaction`:** the service checks venue and seat ownership,
+then conditionally updates only seats still marked `AVAILABLE`. It verifies the affected-row count
+before creating the booking record. A competing request that waits for those rows to be updated
+will observe a smaller count and receive `409 Conflict`; the transaction rolls back any partial
+claim. An integration test races two API requests for the same seat and verifies exactly one
+booking succeeds.
 
 ### Frontend Components and State
 
@@ -258,9 +299,9 @@ The challenge explicitly asks for documented assumptions where the spec is ambig
 ## Performance & Scalability
 
 **Current algorithm**: O(rows × columns) worst case — for every row, seats are read once and
-scanned once for contiguous runs. At 50,000 seats (e.g. 500 rows × 100 columns), this is still a
-single-digit-millisecond operation in memory; the real cost at that scale is I/O, not the
-algorithm itself.
+scanned once for contiguous runs. A 50,000-seat venue therefore means up to 50,000 seat checks
+for a recommendation. Actual latency depends on database I/O, runtime, and deployment hardware
+and should be measured with representative data before setting a performance target.
 
 **What would change for 50,000+ seats in production:**
 
@@ -274,10 +315,10 @@ algorithm itself.
 - **Avoid sending the entire seat map to the frontend.** `GET /venues/:id` should support
   pagination or viewport-based fetching (e.g. only rows currently visible) instead of returning
   all seats at once.
-- **Concurrency at scale**: the current `$transaction` re-read approach works correctly but holds
-  a row lock briefly per booking. At very high concurrent booking volume for the *same* popular
-  seats, a queue-based approach (e.g. a short-lived Redis lock or seat "hold" with expiry) would
-  reduce database contention compared to relying purely on transactional retries.
+- **Concurrency at scale**: the conditional update protects the booking transition without an
+  explicit `SELECT FOR UPDATE`. At very high volume for popular seats, short-lived holds or a queue
+  may help manage contention; add distributed coordination only when measured load warrants it.
+| Concurrent booking handling (bonus) | ✅ Conditional availability update and concurrent API integration test |
 - **Horizontal scaling**: the API itself is stateless and can run multiple instances behind a
   load balancer; Postgres would need read replicas for the read-heavy `/venues/:id` and
   `/best-seats` paths if traffic grew significantly.
@@ -290,9 +331,11 @@ algorithm itself.
 - **Database**: a managed free-tier Postgres (Neon, Supabase, or the target platform's own
   managed Postgres add-on) in production, instead of the local Docker container used for
   development.
-- **CI/CD**: the existing GitHub Actions workflow (`.github/workflows/ci.yml`) already runs
-  lint/typecheck/tests/build on every push; a deployment job could be added that builds and
-  pushes the Docker image, then triggers a deploy hook on the chosen platform.
+- **CI**: the existing GitHub Actions workflow (`.github/workflows/ci.yml`) runs backend
+  lint/typecheck/tests/build for pull requests and pushes to `main` that touch backend files or
+  the workflow. It does not build or deploy the frontend, and it has no deployment job. A future
+  deployment workflow could build and push the Docker image, then trigger a deploy on the chosen
+  platform.
 - **Migrations in production**: the Docker entrypoint runs `prisma migrate deploy` automatically
   on container start, so schema changes ship atomically with each deploy.
 
@@ -312,9 +355,9 @@ algorithm itself.
 | Architectural documentation (Senior) | ✅ see [Architecture](#architecture) |
 | Performance/scalability discussion (Senior) | ✅ see [above](#performance--scalability) |
 | Observability (bonus) | ✅ pino structured logging |
-| Concurrent booking handling (bonus) | ✅ transactional re-check, tested |
+| Concurrent booking handling (bonus) | ✅ Conditional availability update and concurrent API integration test |
 | Dockerization (bonus) | ✅ multi-stage `Dockerfile` + compose |
-| CI/CD pipeline (bonus) | ✅ GitHub Actions |
+| CI pipeline (bonus) | ✅ Backend quality checks in GitHub Actions; no automated deployment |
 | API documentation UI (bonus) | ✅ Swagger UI |
 | Rate limiting (bonus) | ✅ `express-rate-limit` |
 | Database implementation (bonus) | ✅ fully implemented, not just schema |

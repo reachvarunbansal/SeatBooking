@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AskAI from './Components/AskAI';
 import BookSeats from './Components/BookSeats';
 import Header from './Components/Header';
@@ -73,7 +73,7 @@ function App() {
   const [venues, setVenues] = useState<VenueSummary[]>([]);
   const [selectedVenueId, setSelectedVenueId] = useState('');
   const [venueDetail, setVenueDetail] = useState<VenueDetail | null>(null);
-  const [partySize, setPartySize] = useState(2);
+  const [partySizeDraft, setPartySizeDraft] = useState('2');
   const [assistantPrompt, setAssistantPrompt] = useState('');
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [bestSeats, setBestSeats] = useState<Seat[]>([]);
@@ -87,6 +87,11 @@ function App() {
   const [venueManagementError, setVenueManagementError] = useState('');
   const [venueManagementStatus, setVenueManagementStatus] = useState('');
   const [venueManagementLoading, setVenueManagementLoading] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const venueSelectionVersion = useRef(0);
+  const recommendationRequestId = useRef(0);
+  const assistantRequestId = useRef(0);
+  const bookingRequestId = useRef(0);
 
   useEffect(() => {
     async function loadVenues() {
@@ -113,26 +118,57 @@ function App() {
       return;
     }
 
+    let isCurrentRequest = true;
+
     async function loadVenueDetail() {
       try {
         setVenueLoading(true);
         setVenueError(null);
         const data = await requestJson<VenueDetail>(`/api/venues/${selectedVenueId}`);
-        setVenueDetail(data);
+        if (isCurrentRequest) {
+          setVenueDetail(data);
+        }
       } catch (error) {
-        setVenueError(error instanceof Error ? error.message : 'Unable to load venue details.');
+        if (isCurrentRequest) {
+          setVenueError(error instanceof Error ? error.message : 'Unable to load venue details.');
+        }
       } finally {
-        setVenueLoading(false);
+        if (isCurrentRequest) {
+          setVenueLoading(false);
+        }
       }
     }
 
     void loadVenueDetail();
+    return () => {
+      isCurrentRequest = false;
+    };
   }, [selectedVenueId]);
 
   const selectedVenue = useMemo(
     () => venues.find((venue) => venue.id === selectedVenueId) ?? null,
     [selectedVenueId, venues],
   );
+
+  function handleVenueChange(venueId: string) {
+    if (venueId === selectedVenueId) {
+      return;
+    }
+
+    venueSelectionVersion.current += 1;
+    recommendationRequestId.current += 1;
+    assistantRequestId.current += 1;
+    bookingRequestId.current += 1;
+    setSelectedVenueId(venueId);
+    setVenueDetail(null);
+    setVenueLoading(Boolean(venueId));
+    setVenueError(null);
+    setBestSeats([]);
+    setStatusMessage('');
+    setStatusError('');
+    setAssistantLoading(false);
+    setBookingLoading(false);
+  }
 
   async function handleCreateVenue(input: CreateVenueInput, adminToken: string) {
     try {
@@ -146,8 +182,7 @@ function App() {
       });
       const refreshedVenues = await requestJson<VenueSummary[]>('/api/venues');
       setVenues(refreshedVenues);
-      setSelectedVenueId(created.id);
-      setBestSeats([]);
+      handleVenueChange(created.id);
       setVenueManagementStatus(`${created.name} was added with ${input.rows * input.columns} seats.`);
     } catch (error) {
       setVenueManagementError(error instanceof Error ? error.message : 'Unable to add venue.');
@@ -175,9 +210,7 @@ function App() {
       });
       const refreshedVenues = await requestJson<VenueSummary[]>('/api/venues');
       setVenues(refreshedVenues);
-      setSelectedVenueId(refreshedVenues[0]?.id ?? '');
-      setVenueDetail(null);
-      setBestSeats([]);
+      handleVenueChange(refreshedVenues[0]?.id ?? '');
       setVenueManagementStatus(`${selectedVenue.name} and its seats and bookings were deleted.`);
     } catch (error) {
       setVenueManagementError(error instanceof Error ? error.message : 'Unable to delete venue.');
@@ -187,10 +220,21 @@ function App() {
   }
 
   async function handleFindBestSeats() {
-    if (!selectedVenueId) {
+    const partySize = Number(partySizeDraft);
+    const maximumPartySize = selectedVenue?.columns ?? 0;
+    if (
+      !selectedVenueId
+      || !/^\d+$/.test(partySizeDraft)
+      || !Number.isSafeInteger(partySize)
+      || partySize < 1
+      || partySize > maximumPartySize
+    ) {
       return;
     }
 
+    const selectionVersion = venueSelectionVersion.current;
+    const requestId = ++recommendationRequestId.current;
+    setBestSeats([]);
     try {
       setStatusError('');
       setStatusMessage('');
@@ -198,12 +242,16 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ partySize }),
       });
+      if (selectionVersion !== venueSelectionVersion.current || requestId !== recommendationRequestId.current) {
+        return;
+      }
       setBestSeats(result.seats ?? []);
       const rowLabel = result.row ? `row ${result.row.toUpperCase()}` : 'the best available row';
       setStatusMessage(`Recommended seats are in ${rowLabel}. First row, centered view.`);
     } catch (error) {
-      setBestSeats([]);
-      setStatusError(error instanceof Error ? error.message : 'Unable to find best seats.');
+      if (selectionVersion === venueSelectionVersion.current && requestId === recommendationRequestId.current) {
+        setStatusError(error instanceof Error ? error.message : 'Unable to find best seats.');
+      }
     }
   }
 
@@ -212,47 +260,69 @@ function App() {
       return;
     }
 
+    const venueId = selectedVenueId;
+    const selectionVersion = venueSelectionVersion.current;
+    const requestId = ++recommendationRequestId.current;
+    const currentAssistantRequestId = ++assistantRequestId.current;
+    setBestSeats([]);
     try {
       setAssistantLoading(true);
       setStatusError('');
       setStatusMessage('');
       const result = await requestJson<{ preferences: { partySize: number }; row?: string; seats: Seat[] }>(
-        `/api/venues/${selectedVenueId}/seat-assistant`,
+        `/api/venues/${venueId}/seat-assistant`,
         {
           method: 'POST',
           body: JSON.stringify({ prompt: assistantPrompt }),
         },
       );
-      setPartySize(result.preferences.partySize);
+      if (selectionVersion !== venueSelectionVersion.current || requestId !== recommendationRequestId.current) {
+        return;
+      }
+      setPartySizeDraft(String(result.preferences.partySize));
       setBestSeats(result.seats ?? []);
       const rowLabel = result.row ? `row ${result.row.toUpperCase()}` : 'the best available row';
       setStatusMessage(`AI found ${result.preferences.partySize} seat${result.preferences.partySize === 1 ? '' : 's'} in ${rowLabel}.`);
     } catch (error) {
-      setBestSeats([]);
-      setStatusError(error instanceof Error ? error.message : 'The AI seat assistant failed.');
+      if (selectionVersion === venueSelectionVersion.current && requestId === recommendationRequestId.current) {
+        setStatusError(error instanceof Error ? error.message : 'The AI seat assistant failed.');
+      }
     } finally {
-      setAssistantLoading(false);
+      if (currentAssistantRequestId === assistantRequestId.current) {
+        setAssistantLoading(false);
+      }
     }
   }
 
   async function handleBookSeats() {
-    if (!selectedVenueId || bestSeats.length === 0) {
+    if (!selectedVenueId || bestSeats.length === 0 || bookingLoading) {
       return;
     }
 
+    const venueId = selectedVenueId;
+    const seatsToBook = bestSeats;
+    const selectionVersion = venueSelectionVersion.current;
+    const requestId = ++bookingRequestId.current;
+    const isCurrentBooking = () =>
+      selectionVersion === venueSelectionVersion.current && requestId === bookingRequestId.current;
+
+    setBookingLoading(true);
     try {
       setStatusError('');
       const result = await requestJson<BookingResponse>('/api/bookings', {
         method: 'POST',
         body: JSON.stringify({
-          venueId: selectedVenueId,
-          seatIds: bestSeats.map((seat) => seat.id),
+          venueId,
+          seatIds: seatsToBook.map((seat) => seat.id),
         }),
       });
+      if (!isCurrentBooking()) {
+        return;
+      }
 
       const confirmedSeatIds = extractSeatIds(result);
       const confirmedSeatLabels = confirmedSeatIds.map((seatId) => {
-        const seat = bestSeats.find((candidate) => candidate.id === seatId);
+        const seat = seatsToBook.find((candidate) => candidate.id === seatId);
         return seat ? seatLabel(seat) : seatId;
       });
       setStatusMessage(
@@ -260,10 +330,25 @@ function App() {
           ? `Booking confirmed for seats ${confirmedSeatLabels.join(', ')}.`
           : 'Booking confirmed.',
       );
-      const refreshed = await requestJson<VenueDetail>(`/api/venues/${selectedVenueId}`);
-      setVenueDetail(refreshed);
+      setBestSeats([]);
+      try {
+        const refreshed = await requestJson<VenueDetail>(`/api/venues/${venueId}`);
+        if (isCurrentBooking()) {
+          setVenueDetail(refreshed);
+        }
+      } catch {
+        if (isCurrentBooking()) {
+          setStatusError('Booking was confirmed, but the venue could not be refreshed. Reload the venue to see current availability.');
+        }
+      }
     } catch (error) {
-      setStatusError(error instanceof Error ? error.message : 'Booking failed.');
+      if (isCurrentBooking()) {
+        setStatusError(error instanceof Error ? error.message : 'Booking failed.');
+      }
+    } finally {
+      if (requestId === bookingRequestId.current) {
+        setBookingLoading(false);
+      }
     }
   }
 
@@ -297,11 +382,11 @@ function App() {
       <VenueControls
         venues={venues}
         selectedVenueId={selectedVenueId}
-        partySize={partySize}
+        partySizeDraft={partySizeDraft}
         maxPartySize={selectedVenue?.columns ?? 1}
         isLoading={venuesLoading}
-        onVenueChange={setSelectedVenueId}
-        onPartySizeChange={setPartySize}
+        onVenueChange={handleVenueChange}
+        onPartySizeChange={setPartySizeDraft}
         onFindBestSeats={handleFindBestSeats}
       />
 
@@ -321,6 +406,7 @@ function App() {
           recommendedSeats={bestSeats}
           statusMessage={statusMessage}
           statusError={statusError}
+          isBooking={bookingLoading}
           onBook={handleBookSeats}
         />
       </div>

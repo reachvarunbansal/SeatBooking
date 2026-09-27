@@ -1,9 +1,8 @@
-import 'dotenv/config';
 import { createApp } from './app.js';
+import { environment } from './config/environment.js';
 
-const port = Number(process.env.PORT ?? 4000);
 const app = createApp();
 
-app.listen(port, () => {
-  console.log(`Backend listening on http://localhost:${port}`);
+app.listen(environment.PORT, () => {
+  console.log(`Backend listening on http://localhost:${environment.PORT}`);
 });

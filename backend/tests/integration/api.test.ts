@@ -39,6 +39,14 @@ describe('GET /api/health', () => {
   });
 });
 
+describe('GET /api/venues', () => {
+  it('returns venue summaries through the venue service', async () => {
+    const res = await request.get('/api/venues');
+    expect(res.status).toBe(200);
+    expect(res.body.map((venue: { id: string }) => venue.id)).toContain(venueId);
+  });
+});
+
 describe('GET /api/venues/:id', () => {
   it('returns the venue layout and seats', async () => {
     const res = await request.get(`/api/venues/${venueId}`);
@@ -117,6 +125,30 @@ describe('POST /api/bookings', () => {
     const res = await request.post('/api/bookings').send({ venueId, seatIds: [bookedSeat.id] });
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('CONFLICT');
+  });
+
+  it('returns 400 when seatIds contains duplicates', async () => {
+    const availableSeat = await prisma.seat.findFirst({ where: { venueId, status: 'AVAILABLE' } });
+    const res = await request.post('/api/bookings').send({
+      venueId,
+      seatIds: [availableSeat!.id, availableSeat!.id],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('allows only one of two simultaneous requests to book the same seat', async () => {
+    const availableSeat = await prisma.seat.findFirst({ where: { venueId, status: 'AVAILABLE' } });
+    const payload = { venueId, seatIds: [availableSeat!.id] };
+    const responses = await Promise.all([
+      request.post('/api/bookings').send(payload),
+      request.post('/api/bookings').send(payload),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(responses.find((response) => response.status === 409)?.body.error.code).toBe('CONFLICT');
+    expect(await prisma.bookingSeat.count({ where: { seatId: availableSeat!.id } })).toBe(1);
   });
 
   it('returns 400 for an empty seatIds array', async () => {

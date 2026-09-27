@@ -4,24 +4,30 @@ import FindBestSeats from './FindBestSeats';
 type VenueControlsProps = {
     venues: VenueSummary[];
     selectedVenueId: string;
-    partySize: number;
+    partySizeDraft: string;
     maxPartySize: number;
     isLoading: boolean;
     onVenueChange: (venueId: string) => void;
-    onPartySizeChange: (partySize: number) => void;
+    onPartySizeChange: (partySize: string) => void;
     onFindBestSeats: () => void;
 };
 
 export default function VenueControls({
     venues,
     selectedVenueId,
-    partySize,
+    partySizeDraft,
     maxPartySize,
     isLoading,
     onVenueChange,
     onPartySizeChange,
     onFindBestSeats,
 }: VenueControlsProps) {
+    const maxPartySizeValue = Math.max(maxPartySize, 1);
+    const parsedPartySize = Number(partySizeDraft);
+    const isPartySizeValid = /^\d+$/.test(partySizeDraft)
+        && parsedPartySize >= 1
+        && parsedPartySize <= maxPartySizeValue;
+
     if (isLoading) {
         return <div className="panel loading-message">Loading venues…</div>;
     }
@@ -45,16 +51,18 @@ export default function VenueControls({
                 <span className="field-label">Party size</span>
                 <input
                     id="party-size"
-                    value={partySize}
+                    value={partySizeDraft}
                     min={1}
-                    max={Math.max(maxPartySize, 1)}
+                    max={maxPartySizeValue}
                     type="number"
-                    onChange={(event) => onPartySizeChange(event.target.value === '' ? 1 : Math.max(1, Number(event.target.value)))}
+                    onChange={(event) => {
+                        onPartySizeChange(event.target.value);
+                    }}
                     className="form-control form-control-select form-control-party-size"
                 />
             </label>
 
-            <FindBestSeats disabled={!selectedVenueId} onFind={onFindBestSeats} />
+            <FindBestSeats disabled={!selectedVenueId || !isPartySizeValid} onFind={onFindBestSeats} />
         </section>
     );
 }

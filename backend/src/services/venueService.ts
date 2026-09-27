@@ -1,7 +1,7 @@
 import { findBestSeats, type BestSeatsResult } from '../algorithm/seatSelector.js';
 import { prisma } from '../db/client.js';
 import { NoAvailableSeatsError, NotFoundError } from '../errors.js';
-import { createVenue as createVenueRecord, deleteVenue as deleteVenueRecord, findVenueById, listSeatsForVenue } from '../repositories/venueRepository.js';
+import { createVenue as createVenueRecord, deleteVenue as deleteVenueRecord, findVenueById, listSeatsForVenue, listVenues as listVenuesRecord } from '../repositories/venueRepository.js';
 import type { CreateVenueRequest, Seat as AlgorithmSeat, VenueSeatMap } from '../schemas/venue.js';
 
 interface DbSeat {
@@ -29,6 +29,10 @@ function indexToRow(index: number): string {
     n = Math.floor((n - 1) / 26);
   }
   return result;
+}
+
+export async function getVenues() {
+  return listVenuesRecord();
 }
 
 export async function createVenue(params: CreateVenueRequest) {

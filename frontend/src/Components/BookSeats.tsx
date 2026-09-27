@@ -4,10 +4,11 @@ type BookSeatsProps = {
     recommendedSeats: Seat[];
     statusMessage: string;
     statusError: string;
+    isBooking: boolean;
     onBook: () => void;
 };
 
-export default function BookSeats({ recommendedSeats, statusMessage, statusError, onBook }: BookSeatsProps) {
+export default function BookSeats({ recommendedSeats, statusMessage, statusError, isBooking, onBook }: BookSeatsProps) {
     return (
         <aside className="panel reservation-panel">
             <p className="section-eyebrow">Your reservation</p>
@@ -25,9 +26,11 @@ export default function BookSeats({ recommendedSeats, statusMessage, statusError
                     <button
                         type="button"
                         onClick={onBook}
+                        disabled={isBooking}
+                        aria-busy={isBooking}
                         className="button button-primary book-button"
                     >
-                        Book These Seats
+                        {isBooking ? 'Booking…' : 'Book These Seats'}
                     </button>
                 </>
             ) : (
