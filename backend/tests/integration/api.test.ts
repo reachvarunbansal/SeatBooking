@@ -84,6 +84,34 @@ describe('POST /api/venues/:id/best-seats', () => {
 });
 
 describe('venue management', () => {
+  it('allows venue names up to 30 characters and rejects longer names', async () => {
+    const maxLengthName = await request.post('/api/venues').send({ name: 'v'.repeat(30), rows: 1, columns: 1 });
+    const tooLongName = await request.post('/api/venues').send({ name: 'v'.repeat(31), rows: 1, columns: 1 });
+
+    expect(maxLengthName.status).toBe(201);
+    await request.delete(`/api/venues/${maxLengthName.body.id as string}`);
+    expect(tooLongName.status).toBe(400);
+    expect(tooLongName.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects venue layouts above 50 rows or 1000 columns', async () => {
+    const tooManyRows = await request.post('/api/venues').send({ name: 'Too Many Rows', rows: 51, columns: 1 });
+    const tooManyColumns = await request.post('/api/venues').send({ name: 'Too Many Columns', rows: 1, columns: 1001 });
+
+    expect(tooManyRows.status).toBe(400);
+    expect(tooManyRows.body.error.code).toBe('VALIDATION_ERROR');
+    expect(tooManyColumns.status).toBe(400);
+    expect(tooManyColumns.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects venue names that already exist regardless of case', async () => {
+    const duplicate = await request.post('/api/venues').send({ name: 'api test venue', rows: 2, columns: 3 });
+
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('CONFLICT');
+    expect(duplicate.body.error.message).toMatch(/venue with this name already exists/i);
+  });
+
   it('creates a venue with seats and cascades its bookings when deleted', async () => {
     const created = await request.post('/api/venues').send({ name: 'Managed Venue', rows: 2, columns: 3 });
     expect(created.status).toBe(201);

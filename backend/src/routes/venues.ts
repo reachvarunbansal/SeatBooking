@@ -26,12 +26,13 @@ venueRouter.get('/', async (_req, res) => {
  *             type: object
  *             required: [name, rows, columns]
  *             properties:
- *               name: { type: string, minLength: 1, maxLength: 100 }
- *               rows: { type: integer, minimum: 1, maximum: 100 }
- *               columns: { type: integer, minimum: 1, maximum: 100 }
+ *               name: { type: string, minLength: 1, maxLength: 30 }
+ *               rows: { type: integer, minimum: 1, maximum: 50 }
+ *               columns: { type: integer, minimum: 1, maximum: 1000 }
  *     responses:
  *       201: { description: Venue created }
  *       400: { description: Invalid venue configuration }
+ *       409: { description: A venue with this name already exists }
  */
 venueRouter.post('/', requireAdmin, validateBody(CreateVenueRequestSchema), async (req, res) => {
   const venue = await createVenue(req.body);

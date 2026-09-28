@@ -1,4 +1,4 @@
-# PostgreSQL for local development — matches the "free" cost constraint from README-FS.md.
+# Local PostgreSQL service for development and Docker Compose runs.
 services:
   postgres:
     image: postgres:16-alpine

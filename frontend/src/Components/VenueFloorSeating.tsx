@@ -24,11 +24,7 @@ export default function VenueFloorSeating({ venue, isLoading, hasVenues, recomme
     }
 
     if (!venue) {
-        return (
-            <p className="seat-map-message">
-                {hasVenues ? 'Select a venue to view the seat map.' : 'No venue to display yet.'}
-            </p>
-        );
+        return hasVenues ? <p className="seat-map-message">Select a venue to view the seat map.</p> : null;
     }
 
     const { rows, columns } = venue.layout;
@@ -48,45 +44,47 @@ export default function VenueFloorSeating({ venue, isLoading, hasVenues, recomme
                 </span>
             </div>
 
-            <div className="movie-screen">
-                <div className="stage-label">Stage</div>
-            </div>
+            <div className="seat-map-content">
+                <div className="movie-screen">
+                    <div className="stage-label">Stage</div>
+                </div>
 
-            <div className="seat-rows">
-                {Array.from({ length: rows }, (_, rowIndex) => {
-                    const rowName = rowLabelFromIndex(rowIndex);
-                    return (
-                        <div key={rowName} className="seat-row">
-                            <div className="seat-row-label">
-                                {rowName.toUpperCase()}
+                <div className="seat-rows">
+                    {Array.from({ length: rows }, (_, rowIndex) => {
+                        const rowName = rowLabelFromIndex(rowIndex);
+                        return (
+                            <div key={rowName} className="seat-row">
+                                <div className="seat-row-label">
+                                    {rowName.toUpperCase()}
+                                </div>
+                                <div className="seat-row-items">
+                                    {Array.from({ length: columns }, (_, columnIndex) => {
+                                        const column = columnIndex + 1;
+                                        const displaySeatId = `${rowName}${column}`;
+                                        const seat = seatsByDisplayId.get(displaySeatId) ?? {
+                                            id: displaySeatId,
+                                            row: rowName,
+                                            column,
+                                            status: 'AVAILABLE' as const,
+                                        };
+                                        const isRecommended = recommendedIds.has(seat.id) || recommendedDisplayIds.has(displaySeatId);
+                                        const aisleGap = columns >= 10 && column === Math.ceil(columns / 2) ? 'mr-5' : '';
+                                        return (
+                                            <div
+                                                key={seat.id}
+                                                role="img"
+                                                aria-label={`Seat ${seat.id} ${seat.status.toLowerCase()}`}
+                                                className={`seat-tile ${isRecommended ? 'seat-recommended' : `seat-${seat.status.toLowerCase()}`} ${aisleGap ? 'seat-aisle-gap' : ''}`}
+                                            >
+                                                {column}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                            <div className="seat-row-items">
-                                {Array.from({ length: columns }, (_, columnIndex) => {
-                                    const column = columnIndex + 1;
-                                    const displaySeatId = `${rowName}${column}`;
-                                    const seat = seatsByDisplayId.get(displaySeatId) ?? {
-                                        id: displaySeatId,
-                                        row: rowName,
-                                        column,
-                                        status: 'AVAILABLE' as const,
-                                    };
-                                    const isRecommended = recommendedIds.has(seat.id) || recommendedDisplayIds.has(displaySeatId);
-                                    const aisleGap = columns >= 10 && column === Math.ceil(columns / 2) ? 'mr-5' : '';
-                                    return (
-                                        <div
-                                            key={seat.id}
-                                            role="img"
-                                            aria-label={`Seat ${seat.id} ${seat.status.toLowerCase()}`}
-                                            className={`seat-tile ${isRecommended ? 'seat-recommended' : `seat-${seat.status.toLowerCase()}`} ${aisleGap ? 'seat-aisle-gap' : ''}`}
-                                        >
-                                            {column}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
 
             <div className="seat-legend">

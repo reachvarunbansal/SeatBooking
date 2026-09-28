@@ -53,24 +53,29 @@ export default function VenueControls({
 
     return (
         <section className="panel control-panel">
-            <label className="form-field">
-                <span className="field-label">Venue</span>
+            <div className="form-field">
+                <label htmlFor="venue-select" className="field-label">Venue</label>
+                <span id="venue-instruction" className="field-instruction">
+                    Choose a venue and party size to see the best contiguous seats.
+                </span>
                 <select
+                    id="venue-select"
                     value={selectedVenueId}
                     onChange={(event) => onVenueChange(event.target.value)}
+                    aria-describedby="venue-instruction"
                     className="form-control form-control-select"
                 >
                     <option value="" disabled>
-                        Choose a venue and party size to see the best contiguous seats.
+                        Select a venue
                     </option>
                     {venues.map((venue) => (
                         <option key={venue.id} value={venue.id}>{venue.name}</option>
                     ))}
                 </select>
-            </label>
+            </div>
 
             <label htmlFor="party-size" className="form-field">
-                <span className="field-label">Party size</span>
+                <span className="field-label">Party size (Max contiguous seats in a row: {maxPartySizeValue})</span>
                 <input
                     id="party-size"
                     value={partySizeDraft}
@@ -78,8 +83,14 @@ export default function VenueControls({
                     max={maxPartySizeValue}
                     type="number"
                     onChange={(event) => {
-                        onPartySizeChange(event.target.value);
+                        const { value } = event.target;
+                        onPartySizeChange(
+                            value && Number(value) > maxPartySizeValue
+                                ? String(maxPartySizeValue)
+                                : value,
+                        );
                     }}
+                    disabled={!selectedVenueId}
                     className="form-control form-control-select form-control-party-size"
                 />
             </label>
@@ -92,7 +103,8 @@ export default function VenueControls({
                     disabled={!selectedVenueId}
                     onClick={onOpenAskAi}
                 >
-                    Ask AI
+                    <img className="ai-button-mark" src="/ai-mark.svg" alt="" />
+                    <span>Ask AI</span>
                 </button>
             </div>
         </section>

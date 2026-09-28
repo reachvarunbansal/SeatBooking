@@ -1,6 +1,6 @@
 # Seat Selection System Setup
 
-This guide is for interviewers who want to run and test the application. For components, architecture diagrams, API flows, data model, and scaling considerations, see [ARCHITECTURE.md](ARCHITECTURE.md).
+This guide is for reviewers who want to run and test the application. For components, architecture diagrams, API flows, data model, and scaling considerations, see [Architecture.md](Architecture.md).
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ From the repository root, build and start PostgreSQL, the API, and the frontend:
 docker compose up --build
 ```
 
-Open the application at `http://localhost:5173`. The frontend container serves the static app through Nginx and proxies `/api/` and `/docs` to the API. The API is also available directly at `http://localhost:4000`; PostgreSQL is published on port `5434`. Compose applies migrations, and the API creates a **Default Venue** with 10 rows and 20 columns on startup only if no venues exist. It does not add sample venues when any venue is already present.
+Open the application at `http://localhost:5173`. The frontend container serves the static app through Nginx and proxies `/api/` and `/docs` to the API. The API is also available directly at `http://localhost:4000`; PostgreSQL is published on port `5434`. Compose applies migrations, and the API creates a **Default Venue** with 10 rows and 20 columns on startup only if no venues exist. It does not add sample venues when any venue is already present. Venue names are limited to 30 characters; layouts can have up to 50 rows and 1,000 columns.
 
 Stop the stack with `docker compose down`. This keeps the database volume. Use `docker compose down -v` only if you also want to delete the database data.
 
@@ -63,6 +63,10 @@ npm run db:migrate
 npm run db:seed
 npm run dev
 ```
+
+`npm run db:seed` clears existing bookings and venues before creating sample layouts. Do not run it
+against a database whose data you need to retain. The API's default-venue initializer does not clear
+existing data.
 
 ### Windows PowerShell: Terminal 1 (database and backend)
 
@@ -142,6 +146,6 @@ This retains database data. Add `-v` to remove the database volume too.
 
 ## More Detail
 
-- [Architecture and system design](ARCHITECTURE.md)
+- [Architecture and system design](Architecture.md)
 - [Backend setup, APIs, and implementation details](backend/README.md)
 - [Frontend setup, components, and state management](frontend/README.md)

@@ -18,6 +18,8 @@ Keep seat recommendations deterministic and consistent with the venue requiremen
 - Return `null` when no row contains a valid block.
 - Row labels use spreadsheet-style names (`a` through `z`, then `aa`, etc.); keep `rowToIndex` ordering correct for multi-letter labels.
 - Recommendation is read-only. Booking is a separate operation.
+- The venue API currently permits at most 50 rows and 1,000 columns. Keep those request limits in
+   the Zod schema and API tests; do not couple transport validation to this pure selector.
 
 ## Workflow
 

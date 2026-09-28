@@ -57,7 +57,7 @@ export default function AskAI({ isOpen, prompt, isLoading, isDisabled, error, on
             ref={dialogRef}
             className="assistant-dialog"
             hidden={!isOpen}
-            aria-labelledby="ask-ai-title"
+            aria-label="Ask AI"
             aria-describedby="ask-ai-description"
             aria-modal="true"
             onCancel={(event) => {
@@ -76,7 +76,7 @@ export default function AskAI({ isOpen, prompt, isLoading, isDisabled, error, on
                 <header className="assistant-modal-header">
                     <div>
                         <p className="section-eyebrow">Seat assistant</p>
-                        <h2 className="manage-title" id="ask-ai-title">Ask AI</h2>
+                        {/* <h2 className="manage-title" id="ask-ai-title">Ask AI</h2> */}
                     </div>
                     <button
                         type="button"
@@ -85,7 +85,7 @@ export default function AskAI({ isOpen, prompt, isLoading, isDisabled, error, on
                         className="button button-close"
                         aria-label="Close Ask AI dialog"
                     >
-                        Close
+                        <span aria-hidden="true">×</span>
                     </button>
                 </header>
                 <p className="manage-description" id="ask-ai-description">

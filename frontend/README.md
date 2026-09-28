@@ -55,7 +55,7 @@ $env:FRONTEND_HOST_PORT = '5174'
 docker compose up --build
 ```
 
-With those example overrides, open `http://localhost:5174`; the API is directly available at `http://localhost:4001`. Compose does not seed sample venues; create one in **Manage Venues** or use the backend guide's seed instructions. Stop the stack with `docker compose down`; add `-v` only to remove the database volume too.
+With those example overrides, open `http://localhost:5174`; the API is directly available at `http://localhost:4001`. Compose does not load sample seed data, but on an empty database the API creates one **Default Venue** (10 rows × 20 columns). To load the sample venues instead, use the backend guide's `db:seed` command, which replaces existing application data. Stop the stack with `docker compose down`; add `-v` only to remove the database volume too.
 
 ## Tests and Build
 
@@ -90,11 +90,25 @@ src/
 | `AskAI` | Natural-language seat request input |
 | `VenueFloorSeating` | Stage, seat map, availability states, and recommendation highlights |
 | `BookSeats` | Recommendation summary, status messages, and booking action |
+| `BookingConfirmation` | Dismissible booking-success dialog |
 | `types.ts` | Shared venue and seat types |
 
 ## State and Data Flow
 
-The page uses React's built-in `useState`, `useEffect`, and `useMemo` hooks. Shared state such as the venue list, selected venue, party size, recommended seats, and request status stays in `App.tsx`; child components receive values and callbacks through props. `ManageVenue` owns its temporary form fields and reports submitted values to `App`.
+The page uses React's built-in `useState`, `useEffect`, and `useMemo` hooks. Shared state such as the venue list, selected venue, party size, recommended seats, and request status stays in `App.tsx`; child components receive values and callbacks through props. `ManageVenue` owns its temporary form fields and independent delete-venue selection, and resets its fields when opened.
+
+### Venue and Booking Behavior
+
+- Venue names are required, limited to 30 characters in the input, and duplicate names are blocked
+  case-insensitively. The API enforces the same constraints.
+- Venue layouts allow up to 50 rows and 1,000 columns. Party size is limited to the selected venue's
+  column count.
+- The Delete Venue dropdown is independent of the main venue picker and requires inline confirmation
+  before deletion.
+- With no venues, the page offers **Create Venue** and hides venue-management and reservation
+  controls.
+- Successful bookings appear in a dismissible confirmation dialog. Venue create/delete notices are
+  shown in their relevant form sections; page-level notices dismiss automatically after 10 seconds.
 
 Effects load the venue list and selected venue's seat map. User actions call the backend APIs; recommendation results are passed to `VenueFloorSeating` and `BookSeats`. The AI assistant only interprets the natural-language request; the backend's deterministic algorithm selects seats, and booking remains a separate explicit action.
 

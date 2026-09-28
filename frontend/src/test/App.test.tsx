@@ -129,12 +129,16 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: /choose your seats/i })).toBeInTheDocument();
     const venueSelect = await screen.findByRole('combobox', { name: /^venue$/i });
     expect(venueSelect).toHaveValue('');
-    expect(screen.getByRole('option', { name: /choose a venue and party size/i })).toBeDisabled();
+    expect(screen.getByRole('option', { name: /select a venue/i })).toBeDisabled();
+    expect(screen.getByText('Choose a venue and party size to see the best contiguous seats.')).toBeInTheDocument();
     expect(screen.getByText('Select a venue to view the seat map.')).toBeInTheDocument();
     await user.selectOptions(venueSelect, 'venue-1');
     expect(await screen.findByRole('heading', { name: 'Main Hall' })).toBeInTheDocument();
 
     const input = await screen.findByLabelText(/party size/i);
+    await user.clear(input);
+    await user.type(input, '9');
+    expect(input).toHaveValue(5);
     await user.clear(input);
     await user.type(input, '2');
     await user.click(screen.getByRole('button', { name: /find best seats/i }));
@@ -154,8 +158,43 @@ describe('App', () => {
     expect(within(confirmation).getByText('Booking confirmed for seats A2, A3.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /book these seats/i })).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: /seat a2 available/i })).toHaveClass('seat-available');
-    await user.click(within(confirmation).getByRole('button', { name: /^close$/i }));
+    await user.click(within(confirmation).getByRole('button', { name: /close booking confirmation/i }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /booking confirmed/i })).not.toBeInTheDocument());
+  });
+
+  it('keeps the stage centered on the seat track for a 500-column venue', async () => {
+    const defaultFetch = mockFetch.getMockImplementation();
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/venues') && !init?.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: 'wide-venue', name: 'Wide Hall', rows: 1, columns: 500 }],
+        } as Response);
+      }
+      if (url.endsWith('/api/venues/wide-venue') && !init?.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 'wide-venue',
+            name: 'Wide Hall',
+            layout: { rows: 1, columns: 500 },
+            seats: [],
+          }),
+        } as Response);
+      }
+      return defaultFetch?.(input, init) as Promise<Response>;
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'wide-venue');
+
+    const stage = await screen.findByText('Stage');
+    const firstSeat = await screen.findByRole('img', { name: /seat a1 available/i });
+    const contentTrack = stage.closest('.seat-map-content');
+    expect(contentTrack).not.toBeNull();
+    expect(firstSeat.closest('.seat-map-content')).toBe(contentTrack);
   });
 
   it('opens Ask AI only when requested, submits the prompt, and closes on success', async () => {
@@ -174,6 +213,9 @@ describe('App', () => {
 
     expect(await screen.findByText(/ai found 2 seats in row a/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /ask ai/i })).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: /ask ai/i }));
+    expect(within(screen.getByRole('dialog', { name: /ask ai/i })).getByRole('textbox', { name: /your request/i })).toHaveValue('');
 
     const assistantRequest = mockFetch.mock.calls.find(([url]) => String(url).includes('/seat-assistant'));
     expect(JSON.parse(String(assistantRequest?.[1]?.body))).toEqual({ prompt: 'I need two seats' });
@@ -328,13 +370,32 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /manage venue/i }));
 
     expect(screen.getByRole('dialog', { name: /manage venue/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /manage venue/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/venue name/i)).toBeInTheDocument();
-    expect(screen.getByRole('spinbutton', { name: /rows/i })).toBeInTheDocument();
-    expect(screen.getByRole('spinbutton', { name: /columns/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /manage venue/i })).toHaveAccessibleName('Manage Venue');
+    expect(screen.getByLabelText(/venue name/i)).toHaveAttribute('maxLength', '30');
+    expect(screen.getByRole('spinbutton', { name: /rows/i })).toHaveAttribute('max', '50');
+    expect(screen.getByRole('spinbutton', { name: /columns/i })).toHaveAttribute('max', '1000');
     expect(screen.getByRole('button', { name: /add venue/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /delete venue: main hall/i })).toBeInTheDocument();
+    const deleteVenueSelect = screen.getByRole('combobox', { name: /venue to delete/i });
+    expect(deleteVenueSelect).toHaveValue('');
+    expect(within(deleteVenueSelect).getByRole('option', { name: 'Main Hall' })).toBeInTheDocument();
+    expect(within(deleteVenueSelect).getByRole('option', { name: 'Balcony' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^delete venue$/i })).toBeDisabled();
     expect(screen.queryByLabelText(/admin token/i)).not.toBeInTheDocument();
+
+    const venueNameInput = screen.getByLabelText(/venue name/i);
+    await user.type(venueNameInput, 'v'.repeat(35));
+    expect(venueNameInput).toHaveValue('v'.repeat(30));
+    await user.clear(screen.getByRole('spinbutton', { name: /rows/i }));
+    await user.type(screen.getByRole('spinbutton', { name: /rows/i }), '23');
+    await user.selectOptions(deleteVenueSelect, 'venue-2');
+    await user.click(screen.getByRole('button', { name: /close manage venue dialog/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /manage venue/i })).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: /manage venue/i }));
+    expect(screen.getByLabelText(/venue name/i)).toHaveValue('');
+    expect(screen.getByRole('spinbutton', { name: /rows/i })).toHaveValue(10);
+    expect(screen.getByRole('spinbutton', { name: /columns/i })).toHaveValue(12);
+    expect(screen.getByRole('combobox', { name: /venue to delete/i })).toHaveValue('');
   });
 
   it('shows a no venues state with a Create Venue action that opens the modal', async () => {
@@ -350,14 +411,17 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: /no venues yet/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /manage venue/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /^venue$/i })).not.toBeInTheDocument();
-    expect(screen.getByText('No venue to display yet.')).toBeInTheDocument();
+    expect(screen.queryByText('No venue to display yet.')).not.toBeInTheDocument();
     expect(screen.queryByText('Select a venue to view the seat map.')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /best available seats/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/no seat recommendation yet/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create venue/i }));
 
     expect(screen.getByRole('dialog', { name: /manage venue/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /delete venue/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^delete venue$/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/venue name/i)).toHaveFocus();
   });
 
@@ -391,6 +455,15 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /add venue/i }));
 
     expect(await screen.findByText(/new venue was added with 120 seats/i)).toBeInTheDocument();
+    const manager = screen.getByRole('dialog', { name: /manage venue/i });
+    const addVenueForm = within(manager).getByRole('button', { name: /add venue/i }).closest('form');
+    expect(addVenueForm).not.toBeNull();
+    expect(within(addVenueForm as HTMLFormElement).getByRole('status')).toHaveTextContent(/new venue was added with 120 seats/i);
+    expect(within(addVenueForm as HTMLFormElement).getByLabelText(/venue name/i)).toHaveValue('');
+    expect(within(addVenueForm as HTMLFormElement).getByRole('spinbutton', { name: /rows/i })).toHaveValue(10);
+    expect(within(addVenueForm as HTMLFormElement).getByRole('spinbutton', { name: /columns/i })).toHaveValue(12);
+    const deletePanel = within(manager).getByRole('region', { name: /delete venue/i });
+    expect(within(deletePanel).queryByRole('status')).not.toBeInTheDocument();
     const createRequest = mockFetch.mock.calls.find(
       ([url, init]) => String(url).endsWith('/api/venues') && init?.method === 'POST',
     );
@@ -403,6 +476,17 @@ describe('App', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/new venue was added with 120 seats/i);
     await user.click(screen.getByRole('button', { name: /dismiss venue notification/i }));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('blocks adding a venue whose name already exists, ignoring case and surrounding spaces', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /manage venue/i }));
+    await user.type(screen.getByLabelText(/venue name/i), '  main hall  ');
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/venue with this name already exists/i);
+    expect(screen.getByRole('button', { name: /add venue/i })).toBeDisabled();
+    expect(mockFetch.mock.calls.some(([url, init]) => String(url).endsWith('/api/venues') && init?.method === 'POST')).toBe(false);
   });
 
   it('automatically hides the venue success notice after 10 seconds', async () => {
@@ -455,12 +539,12 @@ describe('App', () => {
     expect(manageButton).toHaveFocus();
   });
 
-  it('deletes the selected venue, announces success, and closes the modal', async () => {
+  it('deletes the venue selected in the manager without changing the main selection', async () => {
     const defaultFetch = mockFetch.getMockImplementation();
     let venueWasDeleted = false;
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/api/venues/venue-1') && init?.method === 'DELETE') {
+      if (url.endsWith('/api/venues/venue-2') && init?.method === 'DELETE') {
         venueWasDeleted = true;
         return Promise.resolve({ ok: true, status: 204 } as Response);
       }
@@ -468,7 +552,7 @@ describe('App', () => {
         return Promise.resolve({
           ok: true,
           json: async () => venueWasDeleted
-            ? [{ id: 'venue-2', name: 'Balcony', rows: 2, columns: 5 }]
+            ? [{ id: 'venue-1', name: 'Main Hall', rows: 2, columns: 5 }]
             : [
                 { id: 'venue-1', name: 'Main Hall', rows: 2, columns: 5 },
                 { id: 'venue-2', name: 'Balcony', rows: 2, columns: 5 },
@@ -477,20 +561,24 @@ describe('App', () => {
       }
       return defaultFetch?.(input, init) as Promise<Response>;
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-
     const user = userEvent.setup();
     render(<App />);
     await user.selectOptions(await screen.findByRole('combobox', { name: /^venue$/i }), 'venue-1');
     await user.click(await screen.findByRole('button', { name: /manage venue/i }));
-    await user.click(screen.getByRole('button', { name: /delete venue: main hall/i }));
+    const deleteVenueSelect = screen.getByRole('combobox', { name: /venue to delete/i });
+    expect(deleteVenueSelect).toHaveValue('');
+    await user.selectOptions(deleteVenueSelect, 'venue-2');
+    await user.click(screen.getByRole('button', { name: /^delete venue$/i }));
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete Main Hall?'));
-    expect(await screen.findByText(/main hall and its seats and bookings were deleted/i)).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /confirm venue deletion/i })).toHaveTextContent('Confirm?');
+    expect(screen.getByRole('button', { name: /^confirm$/i })).toBeInTheDocument();
+    expect(mockFetch.mock.calls.some(([url, init]) => String(url).endsWith('/api/venues/venue-2') && init?.method === 'DELETE')).toBe(false);
+    await user.click(screen.getByRole('button', { name: /^confirm$/i }));
+    expect(await screen.findByText(/balcony and its seats and bookings were deleted/i)).toBeInTheDocument();
     await waitFor(
       () => expect(screen.queryByRole('dialog', { name: /manage venue/i })).not.toBeInTheDocument(),
       { timeout: 2500 },
     );
-    expect(screen.getByRole('combobox', { name: /^venue$/i })).toHaveValue('venue-2');
+    expect(screen.getByRole('combobox', { name: /^venue$/i })).toHaveValue('venue-1');
   });
 });

@@ -64,20 +64,15 @@ export default function BookingConfirmation({ message, onClose }: BookingConfirm
                     <button
                         type="button"
                         onClick={onClose}
-                        className="notice-dismiss"
+                        className="button button-close icon-button"
                         aria-label="Close booking confirmation"
                     >
-                        ×
+                        <span aria-hidden="true">×</span>
                     </button>
                 </header>
                 <p className="booking-confirmation-message" id="booking-confirmation-message" role="status">
                     {message}
                 </p>
-                <div className="booking-modal-actions">
-                    <button type="button" onClick={onClose} className="button button-primary">
-                        Close
-                    </button>
-                </div>
             </div>
         </dialog>
     );

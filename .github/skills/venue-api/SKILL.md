@@ -22,6 +22,8 @@ Routes are in `backend/src/routes/`, request schemas in `backend/src/schemas/`, 
 - Add/update Swagger JSDoc on routes when changing the API contract.
 - Update integration tests in `backend/tests/integration/` for route and database behavior; unit-test pure logic under `backend/tests/unit/`.
 - Venue creation generates seats transactionally. Venue deletion relies on the Prisma schema's cascade relations for seats, bookings, and booking-seat rows.
+- Venue names are 1–30 characters and unique case-insensitively; return a conflict for duplicates. Layouts accept 1–50 rows and 1–1,000 columns. Keep the Zod schema, Swagger annotations, and API boundary tests aligned when changing these limits.
+- Before the server listens, `ensureDefaultVenue` creates one 10×20 Default Venue only when no venues exist. It does not replace existing data; `npm run db:seed` is a separate destructive sample-data command.
 - Booking must remain explicit and separate from recommendation. Preserve validation that requested seats exist, belong to the venue, and are available.
 - Venue create/delete use optional `ADMIN_TOKEN` protection. Keep local behavior aligned with `backend/src/middleware/adminAuth.ts` and do not expose or commit secrets.
 - The seat assistant uses OpenAI only to extract structured preferences; validate its output and delegate seat choice to the deterministic selector. The OpenAI key is optional for non-AI API functionality.
@@ -41,6 +43,8 @@ When changing `backend/prisma/schema.prisma`:
 From `backend/`:
 
 ```bash
+npm run lint
+npm run typecheck
 npm run build
 npm test
 ```

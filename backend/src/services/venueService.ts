@@ -1,7 +1,7 @@
 import { findBestSeats, type BestSeatsResult } from '../algorithm/seatSelector.js';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from '../db/client.js';
-import { NoAvailableSeatsError, NotFoundError } from '../errors.js';
+import { ConflictError, NoAvailableSeatsError, NotFoundError } from '../errors.js';
 import { createVenue as createVenueRecord, deleteVenue as deleteVenueRecord, findVenueById, listSeatsForVenue, listVenues as listVenuesRecord } from '../repositories/venueRepository.js';
 import type { CreateVenueRequest, Seat as AlgorithmSeat, VenueSeatMap } from '../schemas/venue.js';
 
@@ -65,7 +65,24 @@ export async function ensureDefaultVenue(database: PrismaClient = prisma) {
 }
 
 export async function createVenue(params: CreateVenueRequest) {
-  return prisma.$transaction((tx) => createVenueInTransaction(params, tx));
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(813729, hashtext(${params.name.toLocaleLowerCase()})) IS NULL AS locked`;
+      const existingVenue = await tx.venue.findFirst({
+        where: { name: { equals: params.name, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (existingVenue) {
+        throw new ConflictError('A venue with this name already exists.');
+      }
+      return createVenueInTransaction(params, tx);
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new ConflictError('A venue with this name already exists.');
+    }
+    throw error;
+  }
 }
 
 export async function removeVenue(venueId: string) {

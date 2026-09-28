@@ -1,8 +1,9 @@
 type HeaderProps = {
+    hasVenues: boolean;
     onManageVenues: () => void;
 };
 
-export default function Header({ onManageVenues }: HeaderProps) {
+export default function Header({ hasVenues, onManageVenues }: HeaderProps) {
     return (
         <header className="page-header">
             <div>
@@ -12,13 +13,15 @@ export default function Header({ onManageVenues }: HeaderProps) {
                     Find a centered view near the front, then reserve your place for the show.
                 </p>
             </div>
-            <button
-                type="button"
-                onClick={onManageVenues}
-                className="button button-secondary"
-            >
-                Manage Venue
-            </button>
+            {hasVenues ? (
+                <button
+                    type="button"
+                    onClick={onManageVenues}
+                    className="button button-secondary"
+                >
+                    Manage Venue
+                </button>
+            ) : null}
         </header>
     );
 }

@@ -2,6 +2,10 @@
 
 This document describes the current application architecture, request flows, persistence model, technical dependencies, and scaling considerations. For reviewer startup and test commands, see [Setup-Instructions.md](Setup-Instructions.md). For implementation detail, see the [backend guide](backend/README.md) and [frontend guide](frontend/README.md).
 
+Interactive diagrams: [Runtime architecture](docs/diagrams/runtime-architecture.html) and
+[recommendation and booking flow](docs/diagrams/seat-recommendation-and-booking.html). Their editable
+diagram definitions are stored beside them as JSON files.
+
 ## System Overview
 
 The system consists of a React single-page application, an Express API, and PostgreSQL. The backend is a layered modular monolith; the frontend is a separate client application. In Docker Compose, Nginx serves the compiled frontend and proxies API and documentation requests to the backend. During local development, Vite serves the UI and the browser calls the API directly.
@@ -67,7 +71,16 @@ Booking availability is claimed with a conditional update that changes only rows
 
 ### Manage Venues
 
-Venue creation stores the layout and generates its seats transactionally. Venue deletion removes related seats and bookings through database cascade relations. When `ADMIN_TOKEN` is configured, create and delete requests require it; local development leaves it unset by default.
+Venue creation stores the layout and generates its seats transactionally. Names are required,
+limited to 30 characters, and unique case-insensitively; duplicate names return `409 Conflict`.
+Layouts allow up to 50 rows and 1,000 columns. Venue deletion removes related seats and bookings
+through database cascade relations. In the UI, deletion uses its own venue dropdown rather than the
+main screen's current venue selection, followed by inline confirmation. When `ADMIN_TOKEN` is
+configured, create and delete requests require it; local development leaves it unset by default.
+
+The venue form resets when the manager opens and after a successful create. Create/delete success
+notices appear beside their corresponding form section; the page-level notice can be dismissed and
+automatically hides after 10 seconds. A successful booking opens a dismissible confirmation dialog.
 
 ### Optional AI Assistant
 
@@ -102,7 +115,7 @@ erDiagram
 
     VENUE {
         string id PK
-        string name
+        string name "unique, max 30 chars"
         int rows
         int columns
     }

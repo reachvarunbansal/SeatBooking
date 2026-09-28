@@ -90,7 +90,9 @@ function App() {
   const [isVenueManagerOpen, setIsVenueManagerOpen] = useState(false);
   const [venueManagementError, setVenueManagementError] = useState('');
   const [venueManagementStatus, setVenueManagementStatus] = useState('');
+  const [venueManagementStatusType, setVenueManagementStatusType] = useState<'' | 'create' | 'delete'>('');
   const [venueManagementLoading, setVenueManagementLoading] = useState(false);
+  const [venueManagerOpenVersion, setVenueManagerOpenVersion] = useState(0);
   const [bookingLoading, setBookingLoading] = useState(false);
   const venueManagerCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const venueSelectionVersion = useRef(0);
@@ -213,22 +215,26 @@ function App() {
       clearTimeout(venueManagerCloseTimer.current);
       venueManagerCloseTimer.current = null;
     }
+    setVenueManagerOpenVersion((version) => version + 1);
     setIsVenueManagerOpen(true);
     setVenueManagementError('');
     setVenueManagementStatus('');
+    setVenueManagementStatusType('');
   }
 
   function openAskAi() {
+    setAssistantPrompt('');
     setAssistantError('');
     setStatusMessage('');
     setIsAskAiOpen(true);
   }
 
-  async function handleCreateVenue(input: CreateVenueInput) {
+  async function handleCreateVenue(input: CreateVenueInput): Promise<boolean> {
     try {
       setVenueManagementLoading(true);
       setVenueManagementError('');
       setVenueManagementStatus('');
+      setVenueManagementStatusType('');
       const created = await requestJson<VenueSummary>('/api/venues', {
         method: 'POST',
         body: JSON.stringify(input),
@@ -237,37 +243,41 @@ function App() {
       setVenues(refreshedVenues);
       handleVenueChange(created.id);
       setVenueManagementStatus(`${created.name} was added with ${input.rows * input.columns} seats.`);
+      setVenueManagementStatusType('create');
       closeVenueManagerAfterSuccess();
+      return true;
     } catch (error) {
       setVenueManagementError(error instanceof Error ? error.message : 'Unable to add venue.');
+      return false;
     } finally {
       setVenueManagementLoading(false);
     }
   }
 
-  async function handleDeleteVenue() {
-    if (!selectedVenueId || !selectedVenue) {
-      return;
-    }
-
-    if (!window.confirm(`Delete ${selectedVenue.name}? Its seats and bookings will also be deleted.`)) {
-      return;
-    }
+  async function handleDeleteVenue(venueId: string): Promise<boolean> {
+    const venueToDelete = venues.find((venue) => venue.id === venueId);
+    if (!venueToDelete) return false;
 
     try {
       setVenueManagementLoading(true);
       setVenueManagementError('');
       setVenueManagementStatus('');
-      await requestJson<void>(`/api/venues/${selectedVenueId}`, {
+      setVenueManagementStatusType('');
+      await requestJson<void>(`/api/venues/${venueId}`, {
         method: 'DELETE',
       });
       const refreshedVenues = await requestJson<VenueSummary[]>('/api/venues');
       setVenues(refreshedVenues);
-      handleVenueChange(refreshedVenues[0]?.id ?? '');
-      setVenueManagementStatus(`${selectedVenue.name} and its seats and bookings were deleted.`);
+      if (selectedVenueId === venueId) {
+        handleVenueChange(refreshedVenues[0]?.id ?? '');
+      }
+      setVenueManagementStatus(`${venueToDelete.name} and its seats and bookings were deleted.`);
+      setVenueManagementStatusType('delete');
       closeVenueManagerAfterSuccess();
+      return true;
     } catch (error) {
       setVenueManagementError(error instanceof Error ? error.message : 'Unable to delete venue.');
+      return false;
     } finally {
       setVenueManagementLoading(false);
     }
@@ -411,15 +421,18 @@ function App() {
   return (
     <main className="app-shell">
       <Header
+        hasVenues={venues.length > 0}
         onManageVenues={openVenueManager}
       />
 
       <ManageVenue
+        key={venueManagerOpenVersion}
         isOpen={isVenueManagerOpen}
-        selectedVenue={selectedVenue}
         isLoading={venueManagementLoading}
         error={venueManagementError}
         status={venueManagementStatus}
+        statusType={venueManagementStatusType}
+        venues={venues}
         onClose={closeVenueManager}
         onCreate={handleCreateVenue}
         onDelete={handleDeleteVenue}

@@ -1,9 +1,9 @@
 # Seat Selection API — Backend
 
-REST API for a concert venue seat selection & booking system, built for the Skyward fullstack
-coding challenge ([README-BE.md](../README-BE.md)). Implements base + mid-level + senior
-requirements plus the requested bonuses (Docker, CI checks, Swagger docs, rate limiting, full DB
-implementation).
+REST API for a concert venue seat-selection and booking system. The API validates venue layouts,
+generates seats transactionally, recommends contiguous available seats, and creates explicit
+bookings. It includes Docker support, CI checks, Swagger docs, rate limiting, and PostgreSQL
+persistence.
 
 ## Approach
 
@@ -138,12 +138,17 @@ npm run db:generate
 from the lockfile. `db:generate` creates the local Prisma Client from `prisma/schema.prisma`; no
 global Prisma installation is needed.
 
-### 4. Apply migrations and seed sample venues
+### 4. Apply migrations and optionally seed sample venues
 
 ```bash
 npm run db:migrate      # applies prisma/migrations to the local database
-npm run db:seed         # seeds sample venues (10x12 and 10x50)
+npm run db:seed         # clears app data, then seeds Main Hall (10x12) and Large Arena (10x50)
 ```
+
+`db:seed` is destructive to application records: it deletes bookings, seats, and venues before
+inserting its samples. Do not run it against data you need to keep. On API startup, a separate
+initializer creates a 10x20 **Default Venue** only when the venue table is empty; it never clears
+existing records.
 
 ### 5. Run the API
 
@@ -183,19 +188,19 @@ npm run lint
 npm run typecheck
 ```
 
-- **Unit tests** (`tests/unit/`) — the seat-selection algorithm in isolation; encode the exact
-  worked examples from README-BE.md plus edge cases (no available seats, party size larger than
-  any run, gaps splitting a row, fallback to a farther row).
-- **Integration tests** (`tests/integration/`) — services and HTTP endpoints against a real
-  Postgres database, using dedicated ad-hoc venues per test file (cleaned up in `afterAll`) so
-  they don't collide with seeded data. Booking tests verify a subsequent request for an
-  already-booked seat returns a conflict; they do not simulate two simultaneous requests.
+- **Unit tests** (`tests/unit/`) — the seat-selection algorithm in isolation, with worked examples
+  and edge cases (no available seats, party size larger than any run, gaps splitting a row, and
+  fallback to a farther row).
+- **Integration tests** (`tests/integration/`) — services and HTTP endpoints against PostgreSQL.
+  The API tests create and clean up their own test venue; they also submit two simultaneous booking
+  requests for the same seat and verify that exactly one succeeds.
 
 ## API Overview
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/health` | Service + DB connectivity check |
+| GET | `/api/venues` | List venue summaries |
 | POST | `/api/venues` | Create a venue and generate its seats |
 | GET | `/api/venues/:id` | Venue layout + full seat map |
 | DELETE | `/api/venues/:id` | Delete a venue and cascade its seats/bookings |
@@ -213,6 +218,10 @@ remain open in local development when `ADMIN_TOKEN` is unset.
 The seat assistant requires `OPENAI_API_KEY` and uses `OPENAI_MODEL` (default `gpt-4o-mini`). The
 model only extracts structured preferences; the existing seat-selection algorithm remains the
 source of truth and booking still requires a separate explicit request.
+
+Venue creation accepts a non-empty name up to 30 characters, with case-insensitive duplicate names
+rejected as `409 Conflict`. Layouts allow 1–50 rows and 1–1,000 columns (up to 50,000 seats). These
+limits are enforced by the Zod request schema and frontend form.
 
 ## Architecture
 
@@ -302,9 +311,8 @@ The challenge explicitly asks for documented assumptions where the spec is ambig
    free seats are fragmented by existing bookings), the algorithm falls through to the next row,
    rather than failing outright — "closer row always preferred" is interpreted as applying only
    among rows that can actually fit the group.
-4. **Multi-letter rows**: the spec's examples only show single-letter rows (`a`–`j`), but the
-   algorithm supports spreadsheet-style multi-letter rows (`aa`, `ab`, ...) for venues with 26+
-   rows, since no upper bound was specified.
+4. **Multi-letter rows**: row labels use spreadsheet-style names (`a`–`z`, then `aa`, `ab`, ...).
+  The API allows up to 50 rows, so multi-letter labels are used for rows 27–50.
 5. **Seat status values**: `AVAILABLE`, `RESERVED`, `BOOKED` are treated as the full status enum;
    only `AVAILABLE` seats are eligible for `/best-seats` or booking.
 
@@ -351,7 +359,7 @@ and should be measured with representative data before setting a performance tar
 - **Migrations in production**: the Docker entrypoint runs `prisma migrate deploy` automatically
   on container start, so schema changes ship atomically with each deploy.
 
-## Requirements Checklist (README-BE.md)
+## Implementation Checklist
 
 | Requirement | Status |
 |---|---|
